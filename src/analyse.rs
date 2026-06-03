@@ -110,6 +110,7 @@ pub fn analyse<R: Read + Seek>(reader: &mut R, disk_size_bytes: u64) -> Result<M
     check_bootable_flags(&mbr, &mut findings);
 
     let last_lba = disk_last_lba(disk_size_bytes);
+    check_gpt(reader, &mbr, last_lba, &mut findings);
     let mut scan = scan_primary_entries(reader, &mbr, disk_size_bytes, last_lba, &mut findings);
     check_overlaps(&scan.extents, &mut findings);
 
@@ -179,6 +180,81 @@ fn check_disk_signature(mbr: &MbrSector, id: BootCodeId, findings: &mut Findings
     let is_windows = matches!(id, BootCodeId::WindowsVista | BootCodeId::Windows7Plus);
     if is_windows && mbr.disk_serial == 0 {
         findings.record(AnomalyKind::ZeroDiskSignature, DISK_SERIAL_OFFSET);
+    }
+}
+
+/// Minimum hidden tail (in sectors) before an undersized protective MBR is
+/// flagged — avoids false positives from a few-sector rounding difference.
+const PROTECTIVE_UNDERSIZE_TOLERANCE: u64 = 2048;
+
+/// Cross-validate the MBR against any GPT at LBA 1.
+///
+/// Reads LBA 1 to determine whether an "EFI PART" header is present, then
+/// reconciles it with the presence/shape of a protective 0xEE entry. Surfaces
+/// hybrid MBRs, undersized protective entries, hidden GPTs, and spoofed
+/// protective MBRs — all data-hiding or tampering vectors.
+fn check_gpt<R: Read + Seek>(
+    reader: &mut R,
+    mbr: &MbrSector,
+    last_lba: u64,
+    findings: &mut Findings,
+) {
+    let protective_idx = mbr
+        .entries
+        .iter()
+        .position(|e| !e.is_empty() && e.type_code.0 == crate::gpt::PROTECTIVE_TYPE_CODE);
+    let header_present = match read_first_sector(reader, SECTOR_BYTES) {
+        Ok(lba1) => crate::gpt::has_gpt_header(&lba1),
+        Err(e) => {
+            diag::partition_read_failed(SECTOR_BYTES, &e);
+            false
+        }
+    };
+
+    let Some(idx) = protective_idx else {
+        // No protective entry. A GPT header with no 0xEE advertising it is hidden.
+        if header_present {
+            findings.record(AnomalyKind::HiddenGpt, lba_to_byte(1));
+        }
+        return;
+    };
+
+    let off = entry_offset(idx);
+    if !header_present {
+        findings.record(AnomalyKind::SpoofedProtectiveMbr, off);
+        return;
+    }
+
+    // Genuine protective entry backed by a GPT header. Check for coexisting real
+    // partitions (hybrid) and incomplete disk coverage (undersized).
+    let extra = mbr
+        .entries
+        .iter()
+        .filter(|e| !e.is_empty() && e.type_code.0 != crate::gpt::PROTECTIVE_TYPE_CODE)
+        .count();
+    if extra > 0 {
+        findings.record(
+            AnomalyKind::HybridMbr {
+                extra_partition_count: extra,
+            },
+            off,
+        );
+    }
+
+    let ee = &mbr.entries[idx];
+    let covered_last_lba = ee.lba_end() as u64;
+    let spans_disk = ee.lba_count == u32::MAX; // 0xFFFFFFFF = "rest of disk"
+    if last_lba != u64::MAX
+        && !spans_disk
+        && last_lba.saturating_sub(covered_last_lba) > PROTECTIVE_UNDERSIZE_TOLERANCE
+    {
+        findings.record(
+            AnomalyKind::ProtectiveMbrUndersized {
+                covered_last_lba,
+                disk_last_lba: last_lba,
+            },
+            off,
+        );
     }
 }
 

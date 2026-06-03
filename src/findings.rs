@@ -137,6 +137,24 @@ pub enum AnomalyKind {
     /// CHS-encoded start/end disagree significantly with the LBA values.
     ChsLbaInconsistency { index: usize },
 
+    // ── GPT / protective MBR ─────────────────────────────────────────────────
+    /// A GPT protective entry (0xEE) coexists with real partition entries — a
+    /// hybrid MBR. Legacy tools see the real partitions; GPT tools see only the
+    /// protective entry. A known data-hiding / dual-visibility vector.
+    HybridMbr { extra_partition_count: usize },
+    /// The protective entry (0xEE) does not span the whole disk, leaving a tail
+    /// region hidden from GPT-aware tooling.
+    ProtectiveMbrUndersized {
+        covered_last_lba: u64,
+        disk_last_lba: u64,
+    },
+    /// A GPT header ("EFI PART") exists at LBA 1 but no protective 0xEE entry
+    /// advertises it — GPT-unaware analysis would miss the real layout.
+    HiddenGpt,
+    /// A protective entry (0xEE) is present but no GPT header backs it at LBA 1
+    /// — a spoofed protective MBR.
+    SpoofedProtectiveMbr,
+
     // ── Extended partition / EBR ─────────────────────────────────────────────
     /// EBR chain contains a cycle (next-pointer loops back).
     EbrCycle,
@@ -197,6 +215,10 @@ impl AnomalyKind {
             | K::EbrExcessiveDepth { .. }
             | K::WipedBootCode
             | K::ErasedBootCode
+            | K::HybridMbr { .. }
+            | K::ProtectiveMbrUndersized { .. }
+            | K::HiddenGpt
+            | K::SpoofedProtectiveMbr
             | K::HighEntropySlack { .. } => Severity::High,
 
             // EBR slack severity scales with its entropy.
@@ -248,6 +270,10 @@ impl AnomalyKind {
             K::OverlappingPartitions { .. } => "MBR-PART-OVERLAP",
             K::OutOfBounds { .. } => "MBR-PART-OOB",
             K::ChsLbaInconsistency { .. } => "MBR-PART-CHSLBA",
+            K::HybridMbr { .. } => "MBR-GPT-HYBRID",
+            K::ProtectiveMbrUndersized { .. } => "MBR-GPT-UNDERSIZED",
+            K::HiddenGpt => "MBR-GPT-HIDDEN",
+            K::SpoofedProtectiveMbr => "MBR-GPT-SPOOFED",
             K::EbrCycle => "MBR-EBR-CYCLE",
             K::EbrExcessiveDepth { .. } => "MBR-EBR-DEPTH",
             K::EbrSlackData { .. } => "MBR-EBR-SLACK",
@@ -302,6 +328,29 @@ impl AnomalyKind {
             } => format!("Entry {index}: last LBA {last_lba} exceeds disk last LBA {disk_last_lba}"),
             K::ChsLbaInconsistency { index } => {
                 format!("Entry {index}: CHS address inconsistent with LBA value")
+            }
+            K::HybridMbr {
+                extra_partition_count,
+            } => format!(
+                "Hybrid MBR: GPT protective entry (0xEE) coexists with {extra_partition_count} \
+                 real partition entr{} — legacy-visible, GPT-invisible data-hiding vector",
+                if *extra_partition_count == 1 { "y" } else { "ies" }
+            ),
+            K::ProtectiveMbrUndersized {
+                covered_last_lba,
+                disk_last_lba,
+            } => format!(
+                "Protective MBR (0xEE) covers only up to LBA {covered_last_lba} but the disk \
+                 ends at LBA {disk_last_lba} — tail region hidden from GPT-aware tools"
+            ),
+            K::HiddenGpt => {
+                "GPT header (\"EFI PART\") present at LBA 1 but no protective 0xEE entry \
+                 advertises it — hidden GPT layout"
+                    .to_string()
+            }
+            K::SpoofedProtectiveMbr => {
+                "Protective entry (0xEE) present but no GPT header at LBA 1 — spoofed protective MBR"
+                    .to_string()
             }
             K::EbrCycle => "EBR chain contains a cycle".to_string(),
             K::EbrExcessiveDepth { depth } => {

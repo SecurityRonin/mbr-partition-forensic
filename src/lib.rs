@@ -30,6 +30,7 @@ pub mod ebr;
 pub mod entropy;
 pub mod findings;
 pub mod gap;
+pub mod gpt;
 pub mod mbr;
 pub mod partition;
 pub mod signature;
