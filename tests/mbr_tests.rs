@@ -1200,6 +1200,28 @@ fn all_kinds() -> Vec<AnomalyKind> {
             offset: 446,
             entropy: 7.5,
         },
+        AnomalyKind::ZeroDiskSignature,
+        AnomalyKind::EmptyProtectiveBootCode,
+        AnomalyKind::KnownBootkit { name: "Stoned" },
+        AnomalyKind::HybridMbr {
+            extra_partition_count: 1,
+        },
+        AnomalyKind::ProtectiveMbrUndersized {
+            covered_last_lba: 1000,
+            disk_last_lba: 4095,
+        },
+        AnomalyKind::HiddenGpt,
+        AnomalyKind::SpoofedProtectiveMbr,
+        AnomalyKind::WipedRegion {
+            lba_start: 11,
+            pattern: mbr_forensic::wipe::FillPattern::Ones,
+        },
+        AnomalyKind::CarvedArtifact { kind: "PNG" },
+        AnomalyKind::VbrHiddenSectorsMismatch {
+            index: 0,
+            bpb_hidden: 63,
+            lba_start: 2048,
+        },
     ]
 }
 
