@@ -119,6 +119,7 @@ pub fn analyse<R: Read + Seek>(reader: &mut R, disk_size_bytes: u64) -> Result<M
     check_gap_content(reader, &gaps, &mut findings);
 
     let disk_serial = mbr.disk_serial;
+    let era = crate::provenance::infer_era(first_partition_lba(&mbr), boot_code_id);
     diag::analysis_complete(
         findings.anomalies.len(),
         scan.summaries.len(),
@@ -133,8 +134,24 @@ pub fn analyse<R: Read + Seek>(reader: &mut R, disk_size_bytes: u64) -> Result<M
         gaps,
         boot_code_id,
         disk_serial,
+        era,
         anomalies: findings.anomalies,
     })
+}
+
+/// Lowest start LBA among real (non-empty, non-extended, non-protective) primary
+/// partitions — the geometry signal for era attribution. `None` when there are
+/// none.
+fn first_partition_lba(mbr: &MbrSector) -> Option<u64> {
+    mbr.entries
+        .iter()
+        .filter(|e| {
+            !e.is_empty()
+                && !e.is_extended()
+                && e.type_code.0 != crate::gpt::PROTECTIVE_TYPE_CODE
+        })
+        .map(|e| e.lba_start as u64)
+        .min()
 }
 
 // ── Stages ────────────────────────────────────────────────────────────────────

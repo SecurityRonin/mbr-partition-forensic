@@ -481,6 +481,8 @@ pub struct MbrAnalysis {
     pub boot_code_id: BootCodeId,
     /// NT disk serial (offset 440, LE u32).
     pub disk_serial: u32,
+    /// Inferred partitioner / era from layout geometry and boot code.
+    pub era: crate::provenance::PartitioningEra,
     /// All detected anomalies, in discovery order.
     pub anomalies: Vec<Anomaly>,
 }

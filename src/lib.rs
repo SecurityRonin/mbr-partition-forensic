@@ -35,6 +35,7 @@ pub mod gap;
 pub mod gpt;
 pub mod mbr;
 pub mod partition;
+pub mod provenance;
 pub mod signature;
 pub mod vbr;
 pub mod wipe;
@@ -50,6 +51,7 @@ pub use findings::{Anomaly, AnomalyKind, MbrAnalysis, PartitionSummary, Severity
 pub use gap::Gap;
 pub use mbr::{parse_mbr_sector, MbrSector};
 pub use partition::{Chs, PartitionEntry, PartitionFamily, TypeCode};
+pub use provenance::{Alignment, PartitioningEra};
 pub use signature::DetectedFs;
 
 /// Crate-level error type.
