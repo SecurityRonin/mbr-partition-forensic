@@ -3,11 +3,11 @@
 
 use mbr_forensic::{
     analyse, entropy,
-    findings::{AnomalyKind, Severity},
+    findings::{Anomaly, AnomalyKind, Severity},
     gap::{compute_gaps, GapKind},
     parse_mbr_sector,
     partition::{Chs, PartitionFamily, TypeCode},
-    signature, BootCodeId, DetectedFs, Error,
+    signature, BootCodeId, DetectedFs, EbrChain, Error,
 };
 use std::io::Cursor;
 
@@ -413,7 +413,7 @@ fn analyse_detects_non_zero_reserved() {
     assert!(analysis
         .anomalies
         .iter()
-        .any(|a| a.kind == AnomalyKind::NonZeroReserved));
+        .any(|a| matches!(a.kind, AnomalyKind::NonZeroReserved { .. })));
 }
 
 #[test]
@@ -427,7 +427,7 @@ fn analyse_detects_multiple_bootable() {
     assert!(analysis
         .anomalies
         .iter()
-        .any(|a| a.kind == AnomalyKind::MultipleBootable));
+        .any(|a| matches!(a.kind, AnomalyKind::MultipleBootable { .. })));
 }
 
 #[test]
@@ -441,7 +441,7 @@ fn analyse_detects_residual_entry() {
     assert!(analysis
         .anomalies
         .iter()
-        .any(|a| matches!(a.kind, AnomalyKind::ResidualEntry { index: 0 })));
+        .any(|a| matches!(a.kind, AnomalyKind::ResidualEntry { index: 0, .. })));
 }
 
 #[test]
@@ -455,7 +455,7 @@ fn analyse_detects_out_of_bounds_partition() {
     assert!(analysis
         .anomalies
         .iter()
-        .any(|a| matches!(a.kind, AnomalyKind::OutOfBounds { index: 0 })));
+        .any(|a| matches!(a.kind, AnomalyKind::OutOfBounds { index: 0, .. })));
 }
 
 #[test]
@@ -890,7 +890,7 @@ fn analyse_inter_partition_gap_detected() {
     let mut c = Cursor::new(disk);
     let analysis = analyse(&mut c, size).unwrap();
     assert!(analysis.anomalies.iter().any(|a| matches!(
-        &a.kind, AnomalyKind::InterPartitionGap { lba_start, lba_end }
+        &a.kind, AnomalyKind::InterPartitionGap { lba_start, lba_end, .. }
         if *lba_start == 200 && *lba_end == 399
     )));
 }
@@ -1023,36 +1023,22 @@ fn analyse_ebr_slack_data_detected() {
 
 #[test]
 fn analyse_ebr_cycle_detected() {
-    // EBR at LBA 100 → next relative = 0 should terminate, but let's set it to 0 (self)
-    // actually to create a cycle: EBR at 100, next = 100 (rel to ext_start=100, so abs=200)
-    // Then EBR at 200 points back to 100 (rel=0 from ext_start=100 = LBA 100, already visited)
+    // Build a chain that loops:
+    //   EBR@100 -> next rel 100 (abs 200)
+    //   EBR@200 -> next rel 100 (abs 200, already visited) -> cycle
+    // `next_lba_rel` is relative to the extended-partition start (LBA 100).
     let ext_lba = 100u32;
     let ext_entry = make_entry(0x80, 0x05, ext_lba, 1000);
     let mut disk = vec![0u8; 5000 * 512];
-    let mbr_sec = make_sector(&[(&ext_entry, 0)]);
-    disk[0..512].copy_from_slice(&mbr_sec);
+    disk[0..512].copy_from_slice(&make_sector(&[(&ext_entry, 0)]));
     disk[0] = 0xEB;
     disk[1] = 0x63;
     disk[2] = 0x90;
 
-    // EBR at LBA 100: next_lba_rel = 100 → abs = 100 + 100 = 200
-    let ebr1 = make_ebr_sector(0x83, 1, 50, 100, 0);
-    disk[100 * 512..101 * 512].copy_from_slice(&ebr1);
-
-    // EBR at LBA 200: next_lba_rel = 0 → abs = 100 + 0 = 100 (already visited!)
-    let ebr2 = make_ebr_sector(0x83, 1, 50, 0, 0);
-    // Override entry1 to point back: next_lba_rel = 0 → abs = ext(100) + 0 = 100
-    // Actually with next_lba_rel=0 it terminates (lba_start=0 breaks). Let me use a
-    // non-zero that wraps: next_lba_rel pointing to 100 → lba_start = 100 - 100 = 0... nope
-    // Better: EBR at 200, next points to abs 100: relative to ext_start=100 → lba_start=0
-    // That terminates. Let me instead make EBR at 100 point to itself directly.
-    // EBR at 100, next_lba_rel = 0 (self-referential when ext_start+0 = ext_start = 100)
-    // ... but lba_start=0 is the "end of chain" sentinel. Use 100 as next_lba_rel:
-    // abs = ext_start(100) + 100 = 200 → EBR at 200 → visited = {100, 200}
-    // EBR at 200 with next_lba_rel = 0 (abs=100) → lba_start=0 → break (sentinel)
-    // To get a cycle: EBR at 200, next_lba_rel = 100 → abs = 300; EBR at 300 → next_lba_rel = 100 → abs = 200 (visited!)
-    let ebr2_cycle = make_ebr_sector(0x83, 1, 50, 100, 0); // next abs = 100+100=200 (visited)
-    disk[200 * 512..201 * 512].copy_from_slice(&ebr2_cycle);
+    // EBR@100 → next rel 100 → abs 200.
+    disk[100 * 512..101 * 512].copy_from_slice(&make_ebr_sector(0x83, 1, 50, 100, 0));
+    // EBR@200 → next rel 100 → abs 200 again (visited) → cycle detected.
+    disk[200 * 512..201 * 512].copy_from_slice(&make_ebr_sector(0x83, 1, 50, 100, 0));
 
     let mut c = Cursor::new(disk);
     let analysis = analyse(&mut c, 5000 * 512).unwrap();
@@ -1150,4 +1136,774 @@ fn analyse_truncated_disk_reader_does_not_panic() {
     let result = analyse(&mut c, 10000 * 512);
     // May succeed (detected_fs=None) or fail with Io; must not panic
     let _ = result;
+}
+
+// ── Anomaly metadata: severity / code / note (single source of truth) ─────────
+//
+// These exercise the derivation methods directly, including branches that are
+// unreachable through `analyse` (e.g. EBR slack entropy > 6.0 is impossible for
+// a 32-byte slack region, whose entropy caps at log2(32) = 5 bits).
+
+/// Every variant must yield a non-empty, `MBR-`-prefixed stable code.
+fn all_kinds() -> Vec<AnomalyKind> {
+    vec![
+        AnomalyKind::NonZeroReserved { bytes: [1, 2] },
+        AnomalyKind::MultipleBootable { count: 2 },
+        AnomalyKind::NoBootablePartition,
+        AnomalyKind::ResidualEntry {
+            index: 0,
+            lba_start: 1,
+            lba_count: 2,
+        },
+        AnomalyKind::OverlappingPartitions {
+            a: 0,
+            b: 1,
+            a_end: 100,
+            b_start: 50,
+        },
+        AnomalyKind::OutOfBounds {
+            index: 0,
+            last_lba: 999,
+            disk_last_lba: 500,
+        },
+        AnomalyKind::ChsLbaInconsistency { index: 1 },
+        AnomalyKind::EbrCycle,
+        AnomalyKind::EbrExcessiveDepth { depth: 64 },
+        AnomalyKind::EbrSlackData {
+            ebr_lba: 100,
+            entropy: 2.5,
+        },
+        AnomalyKind::PrePartitionSpace {
+            lba_start: 1,
+            lba_end: 62,
+            byte_size: 31744,
+        },
+        AnomalyKind::InterPartitionGap {
+            lba_start: 200,
+            lba_end: 399,
+            byte_size: 102400,
+        },
+        AnomalyKind::PostPartitionSpace {
+            lba_start: 500,
+            lba_end: 999,
+            byte_size: 256000,
+        },
+        AnomalyKind::SignatureMismatch {
+            index: 0,
+            declared: TypeCode(0x07),
+            detected: DetectedFs::Ext,
+        },
+        AnomalyKind::WipedBootCode,
+        AnomalyKind::ErasedBootCode,
+        AnomalyKind::UnknownBootCode,
+        AnomalyKind::HighEntropySlack {
+            offset: 446,
+            entropy: 7.5,
+        },
+    ]
+}
+
+#[test]
+fn every_kind_has_stable_code_and_nonempty_note() {
+    for kind in all_kinds() {
+        let code = kind.code();
+        assert!(
+            code.starts_with("MBR-"),
+            "code must be MBR-prefixed: {code}"
+        );
+        assert!(!kind.note().is_empty(), "note must be non-empty for {code}");
+    }
+}
+
+#[test]
+fn codes_are_unique_per_kind() {
+    let kinds = all_kinds();
+    let codes: std::collections::HashSet<&str> = kinds.iter().map(|k| k.code()).collect();
+    assert_eq!(
+        codes.len(),
+        kinds.len(),
+        "each kind must have a distinct code"
+    );
+}
+
+#[test]
+fn severity_critical_kinds() {
+    assert_eq!(AnomalyKind::EbrCycle.severity(), Severity::Critical);
+    assert_eq!(
+        AnomalyKind::OverlappingPartitions {
+            a: 0,
+            b: 1,
+            a_end: 100,
+            b_start: 50
+        }
+        .severity(),
+        Severity::Critical
+    );
+}
+
+#[test]
+fn severity_high_kinds() {
+    assert_eq!(AnomalyKind::WipedBootCode.severity(), Severity::High);
+    assert_eq!(AnomalyKind::ErasedBootCode.severity(), Severity::High);
+    assert_eq!(
+        AnomalyKind::OutOfBounds {
+            index: 0,
+            last_lba: 1,
+            disk_last_lba: 0
+        }
+        .severity(),
+        Severity::High
+    );
+    assert_eq!(
+        AnomalyKind::EbrExcessiveDepth { depth: 64 }.severity(),
+        Severity::High
+    );
+    assert_eq!(
+        AnomalyKind::HighEntropySlack {
+            offset: 0,
+            entropy: 7.0
+        }
+        .severity(),
+        Severity::High
+    );
+}
+
+#[test]
+fn severity_ebr_slack_scales_with_entropy() {
+    // Low entropy → Medium.
+    assert_eq!(
+        AnomalyKind::EbrSlackData {
+            ebr_lba: 1,
+            entropy: 2.0
+        }
+        .severity(),
+        Severity::Medium
+    );
+    // High entropy → High (only reachable via direct construction).
+    assert_eq!(
+        AnomalyKind::EbrSlackData {
+            ebr_lba: 1,
+            entropy: 7.5
+        }
+        .severity(),
+        Severity::High
+    );
+}
+
+#[test]
+fn severity_pre_partition_scales_with_lba() {
+    // Within the reserved track (< 63) → Low.
+    assert_eq!(
+        AnomalyKind::PrePartitionSpace {
+            lba_start: 1,
+            lba_end: 10,
+            byte_size: 5120
+        }
+        .severity(),
+        Severity::Low
+    );
+    // Beyond the reserved track (>= 63) → Medium.
+    assert_eq!(
+        AnomalyKind::PrePartitionSpace {
+            lba_start: 100,
+            lba_end: 200,
+            byte_size: 51712
+        }
+        .severity(),
+        Severity::Medium
+    );
+}
+
+#[test]
+fn severity_medium_kinds() {
+    assert_eq!(
+        AnomalyKind::NonZeroReserved { bytes: [1, 2] }.severity(),
+        Severity::Medium
+    );
+    assert_eq!(
+        AnomalyKind::MultipleBootable { count: 2 }.severity(),
+        Severity::Medium
+    );
+    assert_eq!(
+        AnomalyKind::ResidualEntry {
+            index: 0,
+            lba_start: 1,
+            lba_count: 2
+        }
+        .severity(),
+        Severity::Medium
+    );
+    assert_eq!(
+        AnomalyKind::ChsLbaInconsistency { index: 0 }.severity(),
+        Severity::Medium
+    );
+    assert_eq!(
+        AnomalyKind::InterPartitionGap {
+            lba_start: 1,
+            lba_end: 2,
+            byte_size: 1024
+        }
+        .severity(),
+        Severity::Medium
+    );
+    assert_eq!(
+        AnomalyKind::SignatureMismatch {
+            index: 0,
+            declared: TypeCode(0x07),
+            detected: DetectedFs::Ext
+        }
+        .severity(),
+        Severity::Medium
+    );
+}
+
+#[test]
+fn severity_low_and_info_kinds() {
+    assert_eq!(AnomalyKind::UnknownBootCode.severity(), Severity::Low);
+    assert_eq!(AnomalyKind::NoBootablePartition.severity(), Severity::Info);
+    assert_eq!(
+        AnomalyKind::PostPartitionSpace {
+            lba_start: 1,
+            lba_end: 2,
+            byte_size: 1024
+        }
+        .severity(),
+        Severity::Info
+    );
+}
+
+#[test]
+fn anomaly_new_derives_fields_from_kind() {
+    let a = Anomaly::new(AnomalyKind::EbrCycle, 0x200);
+    assert_eq!(a.severity, Severity::Critical);
+    assert_eq!(a.code, "MBR-EBR-CYCLE");
+    assert_eq!(a.offset, 0x200);
+    assert_eq!(a.note, "EBR chain contains a cycle");
+}
+
+#[test]
+fn severity_display_strings() {
+    assert_eq!(Severity::Info.to_string(), "INFO");
+    assert_eq!(Severity::Low.to_string(), "LOW");
+    assert_eq!(Severity::Medium.to_string(), "MEDIUM");
+    assert_eq!(Severity::High.to_string(), "HIGH");
+    assert_eq!(Severity::Critical.to_string(), "CRITICAL");
+}
+
+#[test]
+fn anomaly_display_format() {
+    let a = Anomaly::new(AnomalyKind::WipedBootCode, 0);
+    let s = a.to_string();
+    assert!(s.contains("HIGH"), "got: {s}");
+    assert!(s.contains("MBR-BOOT-WIPED"), "got: {s}");
+    assert!(s.contains("0x0"), "got: {s}");
+}
+
+#[test]
+fn note_residual_mentions_lba() {
+    let note = AnomalyKind::ResidualEntry {
+        index: 2,
+        lba_start: 100,
+        lba_count: 50,
+    }
+    .note();
+    assert!(note.contains("100") && note.contains("50"), "got: {note}");
+}
+
+#[test]
+fn note_chs_lba_inconsistency() {
+    let note = AnomalyKind::ChsLbaInconsistency { index: 3 }.note();
+    assert!(
+        note.contains('3') && note.to_lowercase().contains("chs"),
+        "got: {note}"
+    );
+}
+
+#[test]
+fn note_high_entropy_slack() {
+    let note = AnomalyKind::HighEntropySlack {
+        offset: 446,
+        entropy: 7.5,
+    }
+    .note();
+    assert!(note.contains("446") && note.contains("7.5"), "got: {note}");
+}
+
+// ── MbrAnalysis helpers ───────────────────────────────────────────────────────
+
+#[test]
+fn max_severity_none_when_clean() {
+    // A disk with valid bootcode and a clean single partition has no high
+    // anomalies, but may have info/low. Build a truly clean image: GRUB boot
+    // code, one partition spanning the whole usable disk, bootable.
+    let entry = make_entry(0x80, 0x83, 1, 999);
+    let mut disk = make_disk(1000, &[(&entry, 0)]);
+    disk[0] = 0xEB;
+    disk[1] = 0x63;
+    disk[2] = 0x90;
+    let mut c = Cursor::new(disk);
+    let analysis = analyse(&mut c, 1000 * 512).unwrap();
+    // There is at least a post-partition gap of zero or detection noise; just
+    // assert max_severity returns a value consistent with the anomalies vec.
+    match analysis.max_severity() {
+        Some(sev) => assert!(analysis.anomalies.iter().any(|a| a.severity == sev)),
+        None => assert!(analysis.anomalies.is_empty()),
+    }
+}
+
+#[test]
+fn max_severity_reflects_highest() {
+    // Overlapping partitions → Critical present.
+    let e0 = make_entry(0x80, 0x83, 100, 500);
+    let e1 = make_entry(0x00, 0x83, 400, 500);
+    let disk = make_disk(2000, &[(&e0, 0), (&e1, 1)]);
+    let size = disk.len() as u64;
+    let mut c = Cursor::new(disk);
+    let analysis = analyse(&mut c, size).unwrap();
+    assert_eq!(analysis.max_severity(), Some(Severity::Critical));
+}
+
+#[test]
+fn anomalies_at_least_filters_by_severity() {
+    let e0 = make_entry(0x80, 0x83, 100, 500);
+    let e1 = make_entry(0x00, 0x83, 400, 500);
+    let disk = make_disk(2000, &[(&e0, 0), (&e1, 1)]);
+    let size = disk.len() as u64;
+    let mut c = Cursor::new(disk);
+    let analysis = analyse(&mut c, size).unwrap();
+    let critical: Vec<_> = analysis.anomalies_at_least(Severity::Critical).collect();
+    assert!(!critical.is_empty());
+    assert!(critical.iter().all(|a| a.severity >= Severity::Critical));
+}
+
+// ── EbrChain ──────────────────────────────────────────────────────────────────
+
+#[test]
+fn ebr_chain_empty_is_empty() {
+    let chain = EbrChain::empty();
+    assert!(chain.entries.is_empty());
+    assert!(!chain.had_cycle);
+    assert!(!chain.depth_exceeded);
+}
+
+#[test]
+fn ebr_chain_default_matches_empty() {
+    let d = EbrChain::default();
+    assert!(d.entries.is_empty());
+    assert!(!d.had_cycle);
+    assert!(!d.depth_exceeded);
+}
+
+// ── Exhaustive TypeCode name() / family() coverage ────────────────────────────
+
+/// Every documented type byte must map to a non-"Unknown" name, exercising
+/// every arm of `name()`.
+#[test]
+fn type_code_name_covers_all_known_bytes() {
+    const KNOWN: &[u8] = &[
+        0x00, 0x01, 0x04, 0x05, 0x06, 0x07, 0x08, 0x0B, 0x0C, 0x0E, 0x0F, 0x11, 0x14, 0x16, 0x17,
+        0x1B, 0x1C, 0x1E, 0x27, 0x42, 0x82, 0x83, 0x84, 0x85, 0x86, 0x87, 0x8E, 0x9F, 0xA5, 0xA6,
+        0xA9, 0xAB, 0xAF, 0xBE, 0xBF, 0xEB, 0xEE, 0xEF, 0xFB, 0xFC, 0xFD, 0xFE,
+    ];
+    for &b in KNOWN {
+        assert_ne!(
+            TypeCode(b).name(),
+            "Unknown",
+            "byte {b:#04X} should be named"
+        );
+    }
+    // A genuinely unknown byte falls through to "Unknown".
+    assert_eq!(TypeCode(0xCD).name(), "Unknown");
+}
+
+/// Exercise every arm of `family()`.
+#[test]
+fn type_code_family_covers_all_arms() {
+    use PartitionFamily as Pf;
+    let cases: &[(u8, Pf)] = &[
+        (0x00, Pf::Empty),
+        (0x01, Pf::Fat12),
+        (0x06, Pf::Fat16),
+        (0x0C, Pf::Fat32),
+        (0x07, Pf::Ntfs),
+        (0x05, Pf::ExtendedMbr),
+        (0x82, Pf::LinuxSwap),
+        (0x83, Pf::Linux),
+        (0x8E, Pf::LinuxLvm),
+        (0xFD, Pf::LinuxRaid),
+        (0x27, Pf::WindowsRecovery),
+        (0x42, Pf::WindowsDynamic),
+        (0xA5, Pf::FreeBsd),
+        (0xA6, Pf::OpenBsd),
+        (0xA9, Pf::NetBsd),
+        (0xAF, Pf::Hfs),
+        (0xEE, Pf::GptProtective),
+        (0xEF, Pf::EfiSystem),
+        (0xFB, Pf::Vmware),
+    ];
+    for &(b, expected) in cases {
+        assert_eq!(TypeCode(b).family(), expected, "byte {b:#04X}");
+    }
+    assert_eq!(TypeCode(0xCD).family(), Pf::Unknown(0xCD));
+}
+
+// ── signature::type_conflicts — every policy arm ──────────────────────────────
+
+#[test]
+fn type_conflicts_unknown_and_zeros_never_conflict() {
+    use PartitionFamily as Pf;
+    assert!(!signature::type_conflicts(Pf::Ntfs, DetectedFs::Unknown));
+    assert!(!signature::type_conflicts(Pf::Ntfs, DetectedFs::AllZeros));
+}
+
+#[test]
+fn type_conflicts_ntfs_declared() {
+    use PartitionFamily as Pf;
+    assert!(signature::type_conflicts(Pf::Ntfs, DetectedFs::Ext));
+    assert!(signature::type_conflicts(Pf::Ntfs, DetectedFs::Luks));
+    // NTFS declared + NTFS detected → no conflict.
+    assert!(!signature::type_conflicts(Pf::Ntfs, DetectedFs::Ntfs));
+}
+
+#[test]
+fn type_conflicts_fat_declared() {
+    use PartitionFamily as Pf;
+    assert!(signature::type_conflicts(Pf::Fat32, DetectedFs::Ntfs));
+    assert!(signature::type_conflicts(Pf::Fat16, DetectedFs::Ext));
+    assert!(signature::type_conflicts(Pf::Fat12, DetectedFs::Luks));
+    assert!(!signature::type_conflicts(Pf::Fat32, DetectedFs::Fat));
+}
+
+#[test]
+fn type_conflicts_linux_declared() {
+    use PartitionFamily as Pf;
+    assert!(signature::type_conflicts(Pf::Linux, DetectedFs::Ntfs));
+    assert!(signature::type_conflicts(Pf::Linux, DetectedFs::Apfs));
+    assert!(!signature::type_conflicts(Pf::Linux, DetectedFs::Ext));
+}
+
+#[test]
+fn type_conflicts_linux_swap_declared() {
+    use PartitionFamily as Pf;
+    assert!(signature::type_conflicts(Pf::LinuxSwap, DetectedFs::Ntfs));
+    assert!(signature::type_conflicts(Pf::LinuxSwap, DetectedFs::Ext));
+    assert!(!signature::type_conflicts(
+        Pf::LinuxSwap,
+        DetectedFs::LinuxSwap
+    ));
+}
+
+#[test]
+fn type_conflicts_linux_lvm_declared() {
+    use PartitionFamily as Pf;
+    assert!(signature::type_conflicts(Pf::LinuxLvm, DetectedFs::Ntfs));
+    assert!(signature::type_conflicts(Pf::LinuxLvm, DetectedFs::Fat));
+    assert!(!signature::type_conflicts(
+        Pf::LinuxLvm,
+        DetectedFs::LinuxLvm
+    ));
+}
+
+#[test]
+fn type_conflicts_unrelated_families_do_not_conflict() {
+    use PartitionFamily as Pf;
+    // An EFI system partition vs a detected FAT is legitimate (ESP is FAT).
+    assert!(!signature::type_conflicts(Pf::EfiSystem, DetectedFs::Fat));
+    assert!(!signature::type_conflicts(Pf::Empty, DetectedFs::Ntfs));
+}
+
+// ── signature::detect — remaining branches ────────────────────────────────────
+
+#[test]
+fn detect_fat_mswin40() {
+    let mut s = [0u8; 512];
+    s[3..11].copy_from_slice(b"MSWIN4.0");
+    assert_eq!(signature::detect(&s), DetectedFs::Fat);
+}
+
+#[test]
+fn detect_fat_freedos() {
+    let mut s = [0u8; 512];
+    s[3..11].copy_from_slice(b"FreeDOS ");
+    assert_eq!(signature::detect(&s), DetectedFs::Fat);
+}
+
+#[test]
+fn detect_short_sector_with_fat_length_no_match_is_unknown() {
+    // Exactly past the FAT-OEM length but no recognised magic anywhere →
+    // exercises the FAT block's fall-through.
+    let mut s = vec![0xCCu8; 64];
+    s[3..11].copy_from_slice(b"NOTAFSXX");
+    assert_eq!(signature::detect(&s), DetectedFs::Unknown);
+}
+
+#[test]
+fn detect_4096_sector_without_swap_magic_is_unknown() {
+    // len >= 4096 enters the swap check, but no swap magic → falls through.
+    let s = vec![0xCCu8; 4096];
+    assert_eq!(signature::detect(&s), DetectedFs::Unknown);
+}
+
+#[test]
+fn detect_lvm_label_beyond_512_is_unknown() {
+    // LABELONE present but at offset >= 512 → not treated as LVM.
+    let mut s = vec![0u8; 700];
+    s[0] = 1; // non-zero so the AllZeros check passes
+    s[600..608].copy_from_slice(b"LABELONE");
+    assert_eq!(signature::detect(&s), DetectedFs::Unknown);
+}
+
+// ── Mock readers for adversarial / overflow-defense paths ─────────────────────
+
+/// A disk backed by an in-memory image that can be made to fail seeks at or
+/// beyond a chosen byte offset — used to exercise I/O-error handling paths.
+struct MockDisk {
+    data: Vec<u8>,
+    pos: usize,
+    fail_seek_at: Option<u64>,
+}
+
+impl std::io::Read for MockDisk {
+    fn read(&mut self, buf: &mut [u8]) -> std::io::Result<usize> {
+        let start = self.pos.min(self.data.len());
+        let end = (start + buf.len()).min(self.data.len());
+        let n = end - start;
+        buf[..n].copy_from_slice(&self.data[start..end]);
+        self.pos += n;
+        Ok(n)
+    }
+}
+
+impl std::io::Seek for MockDisk {
+    fn seek(&mut self, pos: std::io::SeekFrom) -> std::io::Result<u64> {
+        let target = match pos {
+            std::io::SeekFrom::Start(x) => x,
+            std::io::SeekFrom::Current(d) => (self.pos as i64 + d) as u64,
+            std::io::SeekFrom::End(d) => (self.data.len() as i64 + d) as u64,
+        };
+        if let Some(t) = self.fail_seek_at {
+            if target >= t {
+                return Err(std::io::Error::other("mock seek failure"));
+            }
+        }
+        self.pos = target as usize;
+        Ok(target)
+    }
+}
+
+/// A reader that returns the same 512-byte EBR sector for every read and
+/// accepts any seek — lets us drive `walk_ebr_chain` to astronomically large
+/// LBAs that no real backing store could hold.
+struct RepeatEbr {
+    sector: [u8; 512],
+}
+
+impl std::io::Read for RepeatEbr {
+    fn read(&mut self, buf: &mut [u8]) -> std::io::Result<usize> {
+        let n = buf.len().min(512);
+        buf[..n].copy_from_slice(&self.sector[..n]);
+        Ok(n)
+    }
+}
+
+impl std::io::Seek for RepeatEbr {
+    fn seek(&mut self, _pos: std::io::SeekFrom) -> std::io::Result<u64> {
+        Ok(0)
+    }
+}
+
+// ── EBR overflow-defense paths (only reachable via crafted inputs) ────────────
+
+#[test]
+fn walk_ebr_chain_byte_offset_overflow_terminates() {
+    // sector_size = u64::MAX makes `next_ebr_lba * sector_size` overflow on the
+    // first iteration, before any I/O. The chain must end cleanly.
+    let mut empty = Cursor::new(Vec::<u8>::new());
+    let chain = mbr_forensic::ebr::walk_ebr_chain(&mut empty, 2, u64::MAX).unwrap();
+    assert!(chain.entries.is_empty());
+    assert!(!chain.had_cycle);
+    assert!(!chain.depth_exceeded);
+}
+
+#[test]
+fn walk_ebr_chain_next_pointer_overflow_terminates() {
+    // ext_start near u64::MAX with a non-zero next pointer makes
+    // `ext_start + next` overflow → chain ends after the first entry.
+    let mut sector = [0u8; 512];
+    sector.copy_from_slice(&make_ebr_sector(0x83, 1, 1, 5, 0)); // next_lba_rel = 5
+    let mut disk = RepeatEbr { sector };
+    let chain = mbr_forensic::ebr::walk_ebr_chain(&mut disk, u64::MAX - 1, 1).unwrap();
+    assert_eq!(chain.entries.len(), 1);
+    assert!(!chain.had_cycle);
+}
+
+#[test]
+fn analyse_ebr_excessive_depth_detected() {
+    // Chain more EBRs than MAX_DEPTH (64) so traversal caps out.
+    let ext_lba = 100u32;
+    let count = 70u32; // > 64
+    let total_sectors = (ext_lba + count + 10) as u64;
+    let ext_entry = make_entry(0x80, 0x05, ext_lba, count + 5);
+    let mut disk = vec![0u8; total_sectors as usize * 512];
+    let mbr_sec = make_sector(&[(&ext_entry, 0)]);
+    disk[0..512].copy_from_slice(&mbr_sec);
+    disk[0] = 0xEB;
+    disk[1] = 0x63;
+    disk[2] = 0x90;
+    // EBR[i] at LBA ext_lba+i points to EBR[i+1] via next_lba_rel = i+1.
+    for i in 0..count {
+        let ebr = make_ebr_sector(0x83, 1, 1, i + 1, 0);
+        let off = (ext_lba + i) as usize * 512;
+        disk[off..off + 512].copy_from_slice(&ebr);
+    }
+    let mut c = Cursor::new(disk);
+    let analysis = analyse(&mut c, total_sectors * 512).unwrap();
+    assert!(
+        analysis
+            .anomalies
+            .iter()
+            .any(|a| matches!(a.kind, AnomalyKind::EbrExcessiveDepth { .. })),
+        "expected EbrExcessiveDepth"
+    );
+    assert!(analysis.ebr_chain.depth_exceeded);
+}
+
+#[test]
+fn analyse_ebr_walk_seek_failure_terminates() {
+    // The MBR reads fine, but seeking to the EBR sector fails → the chain walk
+    // returns an error which `analyse` absorbs, leaving an empty chain.
+    let ext = make_entry(0x80, 0x05, 100, 100);
+    let mut data = make_disk(200, &[(&ext, 0)]);
+    data[0] = 0xEB;
+    data[1] = 0x63;
+    data[2] = 0x90;
+    let mut mock = MockDisk {
+        data,
+        pos: 0,
+        fail_seek_at: Some(100 * 512), // fails the EBR seek, not the MBR seek
+    };
+    let analysis = analyse(&mut mock, 200 * 512).unwrap();
+    assert!(analysis.ebr_chain.entries.is_empty());
+}
+
+#[test]
+fn analyse_ebr_truncated_read_terminates() {
+    // Extended partition LBA lies beyond the reader's backing bytes, but within
+    // the declared disk size → the EBR read fails and the chain ends cleanly.
+    let ext = make_entry(0x80, 0x05, 100, 100);
+    let mut data = make_disk(60, &[(&ext, 0)]); // only 60 sectors backed
+    data[0] = 0xEB;
+    data[1] = 0x63;
+    data[2] = 0x90;
+    let mut c = Cursor::new(data);
+    let analysis = analyse(&mut c, 200 * 512).unwrap(); // claims 200 sectors
+    assert!(analysis.ebr_chain.entries.is_empty());
+}
+
+#[test]
+fn analyse_partition_beyond_disk_skips_fs_detection() {
+    // Partition starts past the disk end → fs detection short-circuits, and the
+    // entry is flagged out-of-bounds with no detected filesystem.
+    let entry = make_entry(0x80, 0x83, 2000, 10); // LBA 2000 on a 1000-sector disk
+    let mut disk = make_disk(1000, &[(&entry, 0)]);
+    disk[0] = 0xEB;
+    disk[1] = 0x63;
+    disk[2] = 0x90;
+    let mut c = Cursor::new(disk);
+    let analysis = analyse(&mut c, 1000 * 512).unwrap();
+    assert!(analysis
+        .anomalies
+        .iter()
+        .any(|a| matches!(a.kind, AnomalyKind::OutOfBounds { .. })));
+    assert!(analysis.partitions.iter().all(|p| p.detected_fs.is_none()));
+}
+
+// ── read_mbr error propagation ────────────────────────────────────────────────
+
+#[test]
+fn analyse_short_reader_propagates_error() {
+    // Fewer than 512 bytes → read_exact in read_mbr fails → analyse errors.
+    let mut c = Cursor::new(vec![0u8; 100]);
+    assert!(analyse(&mut c, 0).is_err());
+}
+
+#[test]
+fn analyse_seek_failure_propagates_error() {
+    // Seeking to 0 fails → read_mbr's seek errors → analyse errors.
+    let mut mock = MockDisk {
+        data: vec![0u8; 512],
+        pos: 0,
+        fail_seek_at: Some(0),
+    };
+    assert!(analyse(&mut mock, 0).is_err());
+}
+
+// ── Tracing paths under an active subscriber ──────────────────────────────────
+//
+// tracing's field-evaluation blocks only execute when a subscriber is enabled,
+// so these paths need a live subscriber to be exercised. We install a sink
+// subscriber and drive every traced branch (anomaly record, summary, EBR walk
+// failure, partition read failure).
+
+#[cfg(feature = "trace")]
+#[test]
+fn tracing_paths_execute_under_active_subscriber() {
+    let subscriber = tracing_subscriber::fmt()
+        .with_max_level(tracing::Level::TRACE)
+        .with_writer(std::io::sink)
+        .finish();
+
+    tracing::subscriber::with_default(subscriber, || {
+        // Anomaly record + completion summary: an all-zero (wiped) MBR.
+        let disk = make_disk(100, &[]);
+        let mut c = Cursor::new(disk);
+        let _ = analyse(&mut c, 100 * 512).unwrap();
+
+        // EBR walk failure (warn) + partition read failure (trace): a disk with
+        // an extended partition whose sectors cannot be seeked.
+        let ext_entry = make_entry(0x80, 0x05, 100, 100);
+        let mut data = make_disk(200, &[(&ext_entry, 0)]);
+        data[0] = 0xEB;
+        data[1] = 0x63;
+        data[2] = 0x90;
+        let mut mock = MockDisk {
+            data,
+            pos: 0,
+            fail_seek_at: Some(100 * 512),
+        };
+        let analysis = analyse(&mut mock, 200 * 512).unwrap();
+        assert!(analysis.ebr_chain.entries.is_empty());
+
+        // Partition read failure (trace): partition offset within the declared
+        // disk size but past the end of a 512-byte reader.
+        let entry = make_entry(0x80, 0x83, 100, 50);
+        let mut mbr = make_sector(&[(&entry, 0)]);
+        mbr[0] = 0xEB;
+        mbr[1] = 0x63;
+        mbr[2] = 0x90;
+        let mut c = Cursor::new(mbr.to_vec());
+        let _ = analyse(&mut c, 1000 * 512);
+
+        // EBR with no boot signature (trace): extended partition points at an
+        // all-zero sector.
+        let ext = make_entry(0x80, 0x05, 50, 100);
+        let mut data = make_disk(200, &[(&ext, 0)]);
+        data[0] = 0xEB;
+        data[1] = 0x63;
+        data[2] = 0x90;
+        let mut c = Cursor::new(data);
+        let analysis = analyse(&mut c, 200 * 512).unwrap();
+        assert!(analysis.ebr_chain.entries.is_empty());
+
+        // EBR read past end of image (trace): extended partition LBA beyond the
+        // reader's data, but within the declared disk size.
+        let ext = make_entry(0x80, 0x05, 100, 100);
+        let mut data = make_disk(60, &[(&ext, 0)]);
+        data[0] = 0xEB;
+        data[1] = 0x63;
+        data[2] = 0x90;
+        let mut c = Cursor::new(data);
+        let analysis = analyse(&mut c, 200 * 512).unwrap();
+        assert!(analysis.ebr_chain.entries.is_empty());
+    });
 }

@@ -34,6 +34,7 @@ pub mod partition;
 pub mod signature;
 
 mod analyse;
+mod diag;
 
 pub use analyse::analyse;
 pub use boot_code::BootCodeId;

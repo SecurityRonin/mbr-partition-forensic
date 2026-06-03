@@ -4,6 +4,11 @@
 //! entropy < 1.0 → low variety (e.g., repeated pattern); entropy > 6.0
 //! → likely compressed, encrypted, or random data.
 
+/// Entropy (bits/byte) above which a slack region is treated as likely
+/// data-bearing — compressed, encrypted, or random rather than padding.
+/// This is the single threshold the severity model consults for slack.
+pub const HIGH_ENTROPY_THRESHOLD: f64 = 6.0;
+
 /// Compute the Shannon entropy (bits per byte, range 0.0–8.0) of `data`.
 ///
 /// Returns `0.0` for an empty slice.

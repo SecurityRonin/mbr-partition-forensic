@@ -35,6 +35,15 @@ pub enum DetectedFs {
     Unknown,
 }
 
+/// Well-known FAT OEM identifier strings found at sector offset 3.
+const FAT_OEM_IDS: &[&[u8]] = &[
+    b"MSDOS5.0",
+    b"MSWIN4.0",
+    b"MSWIN4.1",
+    b"mkdosfs ",
+    b"FreeDOS ",
+];
+
 /// Attempt to identify the filesystem from up to 512 bytes of a partition's
 /// first sector.  Returns [`DetectedFs::Unknown`] if nothing matches.
 #[must_use]
@@ -71,17 +80,9 @@ pub fn detect(sector: &[u8]) -> DetectedFs {
         return DetectedFs::ExFat;
     }
 
-    // FAT: OEM ID at bytes 3–10, several well-known values.
-    if sector.len() >= 11 {
-        let oem = &sector[3..11];
-        if oem == b"MSDOS5.0"
-            || oem == b"MSWIN4.0"
-            || oem == b"MSWIN4.1"
-            || oem == b"mkdosfs "
-            || oem == b"FreeDOS "
-        {
-            return DetectedFs::Fat;
-        }
+    // FAT: OEM ID at bytes 3–10, matched against well-known formatter strings.
+    if sector.len() >= 11 && FAT_OEM_IDS.iter().any(|id| *id == &sector[3..11]) {
+        return DetectedFs::Fat;
     }
 
     // ext2/3/4: superblock magic 0x53EF at offset 1080 (within a 1 KiB+
@@ -91,20 +92,46 @@ pub fn detect(sector: &[u8]) -> DetectedFs {
     }
 
     // Linux swap: magic at offset 4086 (end of page − 10 bytes).
-    if sector.len() >= 4096 {
-        if &sector[4086..4096] == b"SWAPSPACE2" || &sector[4086..4096] == b"PAGESPACE1" {
-            return DetectedFs::LinuxSwap;
-        }
+    if sector.len() >= 4096
+        && (&sector[4086..4096] == b"SWAPSPACE2" || &sector[4086..4096] == b"PAGESPACE1")
+    {
+        return DetectedFs::LinuxSwap;
     }
 
     // Linux LVM2: "LABELONE" within the first 512 bytes.
-    if let Some(pos) = find_substr(sector, b"LABELONE") {
-        if pos < 512 {
-            return DetectedFs::LinuxLvm;
-        }
+    if find_substr(sector, b"LABELONE").is_some_and(|pos| pos < 512) {
+        return DetectedFs::LinuxLvm;
     }
 
     DetectedFs::Unknown
+}
+
+/// Returns `true` when a declared partition family and a detected filesystem
+/// are clearly incompatible — the basis for a `SignatureMismatch` anomaly.
+///
+/// Deliberately conservative: `Unknown` / `AllZeros` detections never conflict
+/// (a partition's first sector may simply be unwritten), and only well-known
+/// contradictions (e.g. a partition declared NTFS whose first sector is ext4)
+/// are reported. This is the single source of truth for the mismatch policy.
+#[must_use]
+pub fn type_conflicts(declared: crate::partition::PartitionFamily, detected: DetectedFs) -> bool {
+    use crate::partition::PartitionFamily as Pf;
+    use DetectedFs as Df;
+    if matches!(detected, Df::Unknown | Df::AllZeros) {
+        return false;
+    }
+    matches!(
+        (declared, detected),
+        (
+            Pf::Ntfs,
+            Df::Ext | Df::Fat | Df::Luks | Df::LinuxSwap | Df::LinuxLvm | Df::Xfs | Df::Apfs
+        ) | (
+            Pf::Fat16 | Pf::Fat32 | Pf::Fat12,
+            Df::Ntfs | Df::Ext | Df::Luks | Df::LinuxSwap | Df::LinuxLvm | Df::Xfs | Df::Apfs
+        ) | (Pf::Linux, Df::Ntfs | Df::Fat | Df::Luks | Df::Apfs)
+            | (Pf::LinuxSwap, Df::Ntfs | Df::Fat | Df::Ext | Df::Apfs)
+            | (Pf::LinuxLvm, Df::Ntfs | Df::Fat | Df::Ext | Df::Apfs)
+    )
 }
 
 fn find_substr(haystack: &[u8], needle: &[u8]) -> Option<usize> {

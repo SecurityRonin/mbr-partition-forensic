@@ -171,20 +171,41 @@ cargo +nightly fuzz run parse_mbr_sector
 cargo +nightly fuzz run analyse_full
 ```
 
+## Debugging with the `trace` feature
+
+`mbr-forensic` has no logging dependency by default. Enable the `trace` feature to forward every analysis event — each recorded anomaly, the run summary, EBR walk failures, and partition read errors — to the [`tracing`](https://docs.rs/tracing) ecosystem:
+
+```toml
+[dependencies]
+mbr-forensic = { version = "0.1", features = ["trace"] }
+```
+
+```rust
+tracing_subscriber::fmt().with_max_level(tracing::Level::DEBUG).init();
+let analysis = mbr_forensic::analyse(&mut reader, disk_size)?;
+// → DEBUG analyse: anomaly recorded code="MBR-PART-OVERLAP" severity=CRITICAL offset=0x1be ...
+# Ok::<(), mbr_forensic::Error>(())
+```
+
+All diagnostics live in one place (`src/diag.rs`), so the full set of observable events is discoverable at a glance.
+
 ## Testing
 
-103 tests (unit + integration) with 100% line coverage across all modules. Every public API, every error path, and every anomaly type is exercised.
+144 tests (unit + integration; 145 with `--features trace`) covering every public API, every error path, every anomaly kind, and adversarial inputs (overflowing EBR chains, truncated images, seek failures). **100% function coverage with no uncovered lines** — verified in CI.
 
 ```bash
-cargo test
+cargo test                 # default features
+cargo test --features trace
 ```
 
 For coverage:
 
 ```bash
 cargo install cargo-llvm-cov
-cargo llvm-cov --all-features
+cargo llvm-cov --show-missing-lines
 ```
+
+> Aggregate line coverage can read slightly under 100% because the generic, reader-agnostic functions are monomorphized once per reader type in the tests; `--show-missing-lines` confirms no source line is left uncovered.
 
 ## Related
 

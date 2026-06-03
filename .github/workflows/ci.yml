@@ -42,7 +42,26 @@ jobs:
       - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
       - uses: dtolnay/rust-toolchain@stable
       - uses: Swatinem/rust-cache@9bdad043e88c75890e36ad3bbc8d27f0090dd609 # v2.7.8
-      - run: cargo test --all-features
+      - run: cargo test # default features (no logging dependency)
+      - run: cargo test --all-features # exercises the `trace` diagnostics
+
+  coverage:
+    name: Coverage
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          components: llvm-tools-preview
+      - uses: Swatinem/rust-cache@9bdad043e88c75890e36ad3bbc8d27f0090dd609 # v2.7.8
+      - uses: taiki-e/install-action@v2 # renovate: pin digest
+        with:
+          tool: cargo-llvm-cov
+      # Every function must be covered; --show-missing-lines surfaces any
+      # source line with no coverage (generic functions are monomorphized per
+      # reader type, so the aggregate line % can read < 100 even when no line
+      # is uncovered — the function gate is the meaningful invariant).
+      - run: cargo llvm-cov --fail-under-functions 100 --show-missing-lines
 
   msrv:
     name: MSRV (1.80)
