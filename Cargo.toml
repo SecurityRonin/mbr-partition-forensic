@@ -2,7 +2,7 @@
 name = "mbr-forensic"
 version = "0.1.0"
 edition = "2021"
-rust-version = "1.80"
+rust-version = "1.85"
 license = "MIT"
 description = "Forensic MBR parser — structure, anomaly detection, gap analysis, slack-space carving, and filesystem fingerprinting"
 repository = "https://github.com/SecurityRonin/mbr-forensic"
