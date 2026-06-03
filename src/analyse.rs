@@ -104,13 +104,18 @@ pub fn analyse<R: Read + Seek>(reader: &mut R, disk_size_bytes: u64) -> Result<M
     let mut findings = Findings::default();
 
     let boot_code_id = boot_code::identify(&mbr.boot_code);
-    check_boot_code(&mbr, boot_code_id, &mut findings);
+    // Read LBA 1 once: it decides both the GPT cross-validation and whether an
+    // all-zero boot code is benign (genuine GPT disk) or suspicious (legacy).
+    let gpt_header = gpt_header_present(reader);
+    let on_gpt_disk = gpt_header && is_pure_protective_mbr(&mbr);
+
+    check_boot_code(&mbr, boot_code_id, on_gpt_disk, &mut findings);
     check_disk_signature(&mbr, boot_code_id, &mut findings);
     check_reserved(&mbr, &mut findings);
     check_bootable_flags(&mbr, &mut findings);
 
     let last_lba = disk_last_lba(disk_size_bytes);
-    check_gpt(reader, &mbr, last_lba, &mut findings);
+    check_gpt(&mbr, last_lba, gpt_header, &mut findings);
     let mut scan = scan_primary_entries(reader, &mbr, disk_size_bytes, last_lba, &mut findings);
     check_overlaps(&scan.extents, &mut findings);
 
@@ -154,6 +159,29 @@ fn first_partition_lba(mbr: &MbrSector) -> Option<u64> {
         .min()
 }
 
+/// `true` when an "EFI PART" GPT header is present at LBA 1. A read failure
+/// (e.g. a sub-1024-byte image) is treated as "absent".
+fn gpt_header_present<R: Read + Seek>(reader: &mut R) -> bool {
+    match read_first_sector(reader, SECTOR_BYTES) {
+        Ok(lba1) => crate::gpt::has_gpt_header(&lba1),
+        Err(e) => {
+            diag::partition_read_failed(SECTOR_BYTES, &e);
+            false
+        }
+    }
+}
+
+/// `true` when the MBR is a *pure* GPT protective MBR: exactly one non-empty
+/// entry, of type 0xEE. Hybrid MBRs (extra real entries) are excluded, because
+/// their boot code can still be executed by a legacy BIOS.
+fn is_pure_protective_mbr(mbr: &MbrSector) -> bool {
+    let mut nonempty = mbr.entries.iter().filter(|e| !e.is_empty());
+    matches!(
+        (nonempty.next(), nonempty.next()),
+        (Some(e), None) if e.type_code.0 == crate::gpt::PROTECTIVE_TYPE_CODE
+    )
+}
+
 // ── Stages ────────────────────────────────────────────────────────────────────
 
 /// Seek to the start, read 512 bytes, and parse the MBR sector.
@@ -166,11 +194,17 @@ fn read_mbr<R: Read + Seek>(reader: &mut R) -> Result<MbrSector, Error> {
 
 /// Flag wiped / erased / unrecognised boot code.
 ///
+/// All-zero boot code is context-dependent: on a legacy BIOS/MBR-boot disk the
+/// boot code is executed first, so all-zero is suspicious ([`AnomalyKind::WipedBootCode`],
+/// High); on a genuine GPT disk (`on_gpt_disk`) the MBR boot code is never run,
+/// so all-zero is benign ([`AnomalyKind::EmptyProtectiveBootCode`], Info).
+///
 /// Unrecognised boot code is additionally entropy-scanned: near-maximal Shannon
 /// entropy in the 446-byte code area, with no matching loader, is consistent
 /// with a packed or encrypted bootkit payload and raises [`AnomalyKind::HighEntropySlack`].
-fn check_boot_code(mbr: &MbrSector, id: BootCodeId, findings: &mut Findings) {
+fn check_boot_code(mbr: &MbrSector, id: BootCodeId, on_gpt_disk: bool, findings: &mut Findings) {
     let kind = match id {
+        BootCodeId::AllZeros if on_gpt_disk => Some(AnomalyKind::EmptyProtectiveBootCode),
         BootCodeId::AllZeros => Some(AnomalyKind::WipedBootCode),
         BootCodeId::AllOnes => Some(AnomalyKind::ErasedBootCode),
         BootCodeId::Unknown => Some(AnomalyKind::UnknownBootCode),
@@ -213,27 +247,15 @@ const PROTECTIVE_UNDERSIZE_TOLERANCE: u64 = 2048;
 
 /// Cross-validate the MBR against any GPT at LBA 1.
 ///
-/// Reads LBA 1 to determine whether an "EFI PART" header is present, then
-/// reconciles it with the presence/shape of a protective 0xEE entry. Surfaces
-/// hybrid MBRs, undersized protective entries, hidden GPTs, and spoofed
-/// protective MBRs — all data-hiding or tampering vectors.
-fn check_gpt<R: Read + Seek>(
-    reader: &mut R,
-    mbr: &MbrSector,
-    last_lba: u64,
-    findings: &mut Findings,
-) {
+/// `header_present` is whether an "EFI PART" header was found at LBA 1 (read
+/// once by the caller). Reconciles it with the presence/shape of a protective
+/// 0xEE entry, surfacing hybrid MBRs, undersized protective entries, hidden
+/// GPTs, and spoofed protective MBRs — all data-hiding or tampering vectors.
+fn check_gpt(mbr: &MbrSector, last_lba: u64, header_present: bool, findings: &mut Findings) {
     let protective_idx = mbr
         .entries
         .iter()
         .position(|e| !e.is_empty() && e.type_code.0 == crate::gpt::PROTECTIVE_TYPE_CODE);
-    let header_present = match read_first_sector(reader, SECTOR_BYTES) {
-        Ok(lba1) => crate::gpt::has_gpt_header(&lba1),
-        Err(e) => {
-            diag::partition_read_failed(SECTOR_BYTES, &e);
-            false
-        }
-    };
 
     let Some(idx) = protective_idx else {
         // No protective entry. A GPT header with no 0xEE advertising it is hidden.

@@ -210,8 +210,12 @@ pub enum AnomalyKind {
         declared: TypeCode,
         detected: DetectedFs,
     },
-    /// Boot code is all zeros — likely wiped.
+    /// Boot code is all zeros on a legacy (BIOS/MBR-boot) disk — likely wiped.
     WipedBootCode,
+    /// Boot code is all zeros on a genuine GPT/UEFI disk (pure protective MBR).
+    /// The MBR boot code is never executed there, so this is benign — reported
+    /// only for completeness, not as a tampering signal.
+    EmptyProtectiveBootCode,
     /// Boot code is all `0xFF` — likely factory-erased or deliberately wiped.
     ErasedBootCode,
     /// Boot code did not match any known signature.
@@ -276,7 +280,9 @@ impl AnomalyKind {
             K::UnknownBootCode | K::CarvedArtifact { .. } => Severity::Low,
 
             // Info — noted, not suspicious.
-            K::NoBootablePartition | K::PostPartitionSpace { .. } => Severity::Info,
+            K::NoBootablePartition
+            | K::PostPartitionSpace { .. }
+            | K::EmptyProtectiveBootCode => Severity::Info,
         }
     }
 
@@ -310,6 +316,7 @@ impl AnomalyKind {
             K::SignatureMismatch { .. } => "MBR-PART-SIGMISMATCH",
             K::VbrHiddenSectorsMismatch { .. } => "MBR-VBR-HIDDEN",
             K::WipedBootCode => "MBR-BOOT-WIPED",
+            K::EmptyProtectiveBootCode => "MBR-BOOT-PROTECTIVE-EMPTY",
             K::ErasedBootCode => "MBR-BOOT-ERASED",
             K::UnknownBootCode => "MBR-BOOT-UNKNOWN",
             K::HighEntropySlack { .. } => "MBR-SLACK-ENTROPY",
@@ -430,6 +437,11 @@ impl AnomalyKind {
                 format!("Boot code contains a documented {name} boot-sector-malware marker")
             }
             K::WipedBootCode => "Boot code is all zeros — likely wiped or overwritten".to_string(),
+            K::EmptyProtectiveBootCode => {
+                "MBR boot code is empty (all zeros), which is expected on a GPT/UEFI disk — \
+                 the protective MBR's boot code is never executed"
+                    .to_string()
+            }
             K::ErasedBootCode => {
                 "Boot code is all 0xFF — factory-erased or deliberate wipe".to_string()
             }
