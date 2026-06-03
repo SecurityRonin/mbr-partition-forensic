@@ -540,6 +540,17 @@ fn check_gap_content<R: Read + Seek>(reader: &mut R, gaps: &[Gap], findings: &mu
                 byte_offset,
             );
         }
+
+        // Carve recoverable file headers from the same window — leftover data
+        // from deleted or hidden files in unallocated space.
+        for artifact in crate::carve::carve(&buf, byte_offset) {
+            findings.record(
+                AnomalyKind::CarvedArtifact {
+                    kind: artifact.kind,
+                },
+                artifact.offset,
+            );
+        }
     }
 }
 

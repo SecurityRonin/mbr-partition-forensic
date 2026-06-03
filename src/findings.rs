@@ -191,6 +191,9 @@ pub enum AnomalyKind {
         lba_start: u64,
         pattern: FillPattern,
     },
+    /// A recoverable file header (carved by magic) was found in unpartitioned
+    /// space — leftover data from a deleted or hidden file.
+    CarvedArtifact { kind: &'static str },
 
     // ── Semantic / content ───────────────────────────────────────────────────
     /// Declared partition type differs from detected filesystem magic.
@@ -260,8 +263,8 @@ impl AnomalyKind {
             | K::InterPartitionGap { .. }
             | K::SignatureMismatch { .. } => Severity::Medium,
 
-            // Low — minor deviation.
-            K::UnknownBootCode => Severity::Low,
+            // Low — minor deviation / notable leftover data.
+            K::UnknownBootCode | K::CarvedArtifact { .. } => Severity::Low,
 
             // Info — noted, not suspicious.
             K::NoBootablePartition | K::PostPartitionSpace { .. } => Severity::Info,
@@ -294,6 +297,7 @@ impl AnomalyKind {
             K::InterPartitionGap { .. } => "MBR-GAP-MID",
             K::PostPartitionSpace { .. } => "MBR-GAP-POST",
             K::WipedRegion { .. } => "MBR-GAP-WIPED",
+            K::CarvedArtifact { .. } => "MBR-CARVE-ARTIFACT",
             K::SignatureMismatch { .. } => "MBR-PART-SIGMISMATCH",
             K::WipedBootCode => "MBR-BOOT-WIPED",
             K::ErasedBootCode => "MBR-BOOT-ERASED",
@@ -392,6 +396,9 @@ impl AnomalyKind {
                 "Unpartitioned region at LBA {lba_start} shows a deliberate wipe pattern: {}",
                 pattern.label()
             ),
+            K::CarvedArtifact { kind } => {
+                format!("Recoverable {kind} file header found in unpartitioned space")
+            }
             K::SignatureMismatch {
                 index,
                 declared,
