@@ -102,7 +102,7 @@ pub fn analyse<R: Read + Seek>(reader: &mut R, disk_size_bytes: u64) -> Result<M
     let mut findings = Findings::default();
 
     let boot_code_id = boot_code::identify(&mbr.boot_code);
-    check_boot_code(boot_code_id, &mut findings);
+    check_boot_code(&mbr, boot_code_id, &mut findings);
     check_reserved(&mbr, &mut findings);
     check_bootable_flags(&mbr, &mut findings);
 
@@ -143,7 +143,11 @@ fn read_mbr<R: Read + Seek>(reader: &mut R) -> Result<MbrSector, Error> {
 }
 
 /// Flag wiped / erased / unrecognised boot code.
-fn check_boot_code(id: BootCodeId, findings: &mut Findings) {
+///
+/// Unrecognised boot code is additionally entropy-scanned: near-maximal Shannon
+/// entropy in the 446-byte code area, with no matching loader, is consistent
+/// with a packed or encrypted bootkit payload and raises [`AnomalyKind::HighEntropySlack`].
+fn check_boot_code(mbr: &MbrSector, id: BootCodeId, findings: &mut Findings) {
     let kind = match id {
         BootCodeId::AllZeros => Some(AnomalyKind::WipedBootCode),
         BootCodeId::AllOnes => Some(AnomalyKind::ErasedBootCode),
@@ -152,6 +156,12 @@ fn check_boot_code(id: BootCodeId, findings: &mut Findings) {
     };
     if let Some(kind) = kind {
         findings.record(kind, 0);
+    }
+    if id == BootCodeId::Unknown {
+        let entropy = entropy::shannon(&mbr.boot_code);
+        if entropy > entropy::HIGH_ENTROPY_THRESHOLD {
+            findings.record(AnomalyKind::HighEntropySlack { offset: 0, entropy }, 0);
+        }
     }
 }
 
