@@ -48,6 +48,81 @@ impl Chs {
                 + (self.sector as u32 - 1),
         )
     }
+
+    /// `true` when the CHS field is the all-zero "unused" convention.
+    ///
+    /// LBA-only tooling routinely zeroes the CHS fields; this is never an
+    /// inconsistency.
+    #[must_use]
+    pub fn is_unused(self) -> bool {
+        self.cylinder == 0 && self.head == 0 && self.sector == 0
+    }
+
+    /// `true` when the CHS field is the maximum/overflow marker written when a
+    /// partition's start or end exceeds the CHS-addressable range.
+    ///
+    /// The canonical encoding is `FE FF FF` (head 254, sector 63, cylinder
+    /// 1023); some tools write `FF FF FF` (head 255). Both are accepted.
+    #[must_use]
+    pub fn is_overflow_marker(self) -> bool {
+        self.cylinder == CHS_MAX_CYLINDER
+            && self.sector == STD_SECTORS_PER_TRACK
+            && (self.head == 254 || self.head == 255)
+    }
+}
+
+/// De-facto standard LBA-assist geometry: 255 heads per cylinder. Virtually
+/// every modern MBR partitioning tool (fdisk, Windows, gparted) uses this when
+/// translating between CHS and LBA.
+pub const STD_HEADS_PER_CYL: u8 = 255;
+/// De-facto standard LBA-assist geometry: 63 sectors per track.
+pub const STD_SECTORS_PER_TRACK: u8 = 63;
+/// Highest cylinder representable in the packed 10-bit CHS cylinder field.
+const CHS_MAX_CYLINDER: u16 = 1023;
+
+/// Outcome of comparing a CHS address against its companion LBA value.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum ChsConsistency {
+    /// CHS translates to the LBA (or is the accepted overflow marker).
+    Consistent,
+    /// CHS is the all-zero "unused" convention — never an inconsistency.
+    Unused,
+    /// CHS contradicts the LBA — a hallmark of a hand-edited table.
+    Inconsistent,
+}
+
+/// Highest LBA addressable by the packed CHS scheme under the given geometry.
+///
+/// CHS covers cylinders `0..=1023`, heads `0..=hpc-1`, sectors `1..=spt`, so the
+/// addressable count is `1024 * hpc * spt` sectors (LBA `0` through count−1).
+#[must_use]
+fn max_chs_addressable_lba(hpc: u8, spt: u8) -> u64 {
+    1024u64 * hpc as u64 * spt as u64 - 1
+}
+
+/// Classify whether a packed CHS address is consistent with its LBA companion.
+///
+/// Conservative by design (per the no-false-positives mandate): the all-zero
+/// "unused" convention and the overflow marker are always accepted, and a CHS
+/// is only reported [`ChsConsistency::Inconsistent`] when it purports to be a
+/// real address that does not translate to the LBA under the given geometry.
+#[must_use]
+pub fn chs_consistency(chs: Chs, lba: u32, hpc: u8, spt: u8) -> ChsConsistency {
+    if chs.is_unused() {
+        return ChsConsistency::Unused;
+    }
+    if chs.is_overflow_marker() {
+        return ChsConsistency::Consistent;
+    }
+    if u64::from(lba) > max_chs_addressable_lba(hpc, spt) {
+        // Beyond CHS range, a well-formed table must use the overflow marker;
+        // a concrete small CHS here means the address was crafted by hand.
+        return ChsConsistency::Inconsistent;
+    }
+    match chs.to_lba(hpc, spt) {
+        Some(translated) if translated == lba => ChsConsistency::Consistent,
+        _ => ChsConsistency::Inconsistent,
+    }
 }
 
 /// A single 16-byte primary partition table entry.

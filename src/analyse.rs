@@ -214,6 +214,8 @@ fn scan_primary_entries<R: Read + Seek>(
             continue;
         }
 
+        check_chs_lba(i, entry, findings);
+
         let lba_start = entry.lba_start as u64;
         let lba_end = entry.lba_end() as u64;
         let byte_offset = lba_to_byte(lba_start);
@@ -258,6 +260,31 @@ fn scan_primary_entries<R: Read + Seek>(
     }
 
     PrimaryScan { extents, summaries }
+}
+
+/// Flag a primary entry whose packed CHS first/last addresses contradict their
+/// LBA companions — a hallmark of a hand-edited or tool-crafted partition table.
+///
+/// Uses the de-facto standard LBA-assist geometry; the all-zero "unused"
+/// convention and the CHS overflow marker are both accepted (see
+/// [`crate::partition::chs_consistency`]).
+fn check_chs_lba(index: usize, entry: &crate::partition::PartitionEntry, findings: &mut Findings) {
+    use crate::partition::{chs_consistency, ChsConsistency, STD_HEADS_PER_CYL, STD_SECTORS_PER_TRACK};
+    let first = chs_consistency(
+        entry.chs_first,
+        entry.lba_start,
+        STD_HEADS_PER_CYL,
+        STD_SECTORS_PER_TRACK,
+    );
+    let last = chs_consistency(
+        entry.chs_last,
+        entry.lba_end(),
+        STD_HEADS_PER_CYL,
+        STD_SECTORS_PER_TRACK,
+    );
+    if first == ChsConsistency::Inconsistent || last == ChsConsistency::Inconsistent {
+        findings.record(AnomalyKind::ChsLbaInconsistency { index }, entry_offset(index));
+    }
 }
 
 /// Detect overlapping partition extents.
