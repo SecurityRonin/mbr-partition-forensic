@@ -36,6 +36,7 @@ pub mod gpt;
 pub mod mbr;
 pub mod partition;
 pub mod signature;
+pub mod vbr;
 pub mod wipe;
 
 mod analyse;

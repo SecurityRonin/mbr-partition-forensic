@@ -196,6 +196,14 @@ pub enum AnomalyKind {
     CarvedArtifact { kind: &'static str },
 
     // ── Semantic / content ───────────────────────────────────────────────────
+    /// A FAT/NTFS volume's BPB "hidden sectors" field disagrees with its
+    /// partition-table LBA — consistent with a relocated/copied volume or an
+    /// edited table (data-hiding / relocation indicator).
+    VbrHiddenSectorsMismatch {
+        index: usize,
+        bpb_hidden: u32,
+        lba_start: u64,
+    },
     /// Declared partition type differs from detected filesystem magic.
     SignatureMismatch {
         index: usize,
@@ -234,6 +242,7 @@ impl AnomalyKind {
             | K::HiddenGpt
             | K::SpoofedProtectiveMbr
             | K::WipedRegion { .. }
+            | K::VbrHiddenSectorsMismatch { .. }
             | K::HighEntropySlack { .. } => Severity::High,
 
             // EBR slack severity scales with its entropy.
@@ -299,6 +308,7 @@ impl AnomalyKind {
             K::WipedRegion { .. } => "MBR-GAP-WIPED",
             K::CarvedArtifact { .. } => "MBR-CARVE-ARTIFACT",
             K::SignatureMismatch { .. } => "MBR-PART-SIGMISMATCH",
+            K::VbrHiddenSectorsMismatch { .. } => "MBR-VBR-HIDDEN",
             K::WipedBootCode => "MBR-BOOT-WIPED",
             K::ErasedBootCode => "MBR-BOOT-ERASED",
             K::UnknownBootCode => "MBR-BOOT-UNKNOWN",
@@ -407,6 +417,14 @@ impl AnomalyKind {
                 "Entry {index}: declared type {:?} ({}) but detected {detected:?} from first sector",
                 declared.family(),
                 declared.name(),
+            ),
+            K::VbrHiddenSectorsMismatch {
+                index,
+                bpb_hidden,
+                lba_start,
+            } => format!(
+                "Entry {index}: VBR hidden-sectors field ({bpb_hidden}) disagrees with \
+                 partition-table LBA ({lba_start}) — volume relocated/copied or table edited"
             ),
             K::KnownBootkit { name } => {
                 format!("Boot code contains a documented {name} boot-sector-malware marker")

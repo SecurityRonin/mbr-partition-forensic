@@ -344,6 +344,8 @@ fn scan_primary_entries<R: Read + Seek>(
 
         extents.push((lba_start, lba_end));
 
+        check_vbr(reader, i, lba_start, byte_offset, disk_size_bytes, findings);
+
         let detected_fs = detect_partition_fs(reader, byte_offset, disk_size_bytes);
         if let Some(detected) = detected_fs {
             if signature::type_conflicts(entry.type_code.family(), detected) {
@@ -394,6 +396,41 @@ fn check_chs_lba(index: usize, entry: &crate::partition::PartitionEntry, finding
     );
     if first == ChsConsistency::Inconsistent || last == ChsConsistency::Inconsistent {
         findings.record(AnomalyKind::ChsLbaInconsistency { index }, entry_offset(index));
+    }
+}
+
+/// Parse a partition's VBR and flag a stale BPB hidden-sectors field.
+///
+/// A FAT/NTFS volume records its disk offset in the BPB; when it disagrees with
+/// the partition-table LBA the volume was relocated/copied or the table edited.
+/// Only nonzero mismatches are flagged (zero is the removable-media convention),
+/// and non-FAT/NTFS first sectors are skipped via [`crate::vbr::parse_bpb`].
+fn check_vbr<R: Read + Seek>(
+    reader: &mut R,
+    index: usize,
+    lba_start: u64,
+    byte_offset: u64,
+    disk_size_bytes: u64,
+    findings: &mut Findings,
+) {
+    if disk_size_bytes != 0 && byte_offset >= disk_size_bytes {
+        return;
+    }
+    let Ok(sector) = read_first_sector(reader, byte_offset) else {
+        return;
+    };
+    let Some(bpb) = crate::vbr::parse_bpb(&sector) else {
+        return;
+    };
+    if bpb.hidden_sectors != 0 && u64::from(bpb.hidden_sectors) != lba_start {
+        findings.record(
+            AnomalyKind::VbrHiddenSectorsMismatch {
+                index,
+                bpb_hidden: bpb.hidden_sectors,
+                lba_start,
+            },
+            byte_offset,
+        );
     }
 }
 
