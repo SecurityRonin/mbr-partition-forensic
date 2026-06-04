@@ -12,6 +12,7 @@
 
 /// A file header recovered from a byte region by its magic signature.
 #[derive(Debug, Clone, PartialEq, Eq)]
+#[cfg_attr(feature = "serde", derive(serde::Serialize))]
 pub struct CarvedFile {
     /// Short type label, e.g. `"PNG"`, `"ZIP"`, `"PDF"`.
     pub kind: &'static str,
@@ -21,6 +22,7 @@ pub struct CarvedFile {
 
 /// A file-type magic signature: a `kind` label and the leading `magic` bytes.
 #[derive(Debug, Clone, Copy)]
+#[cfg_attr(feature = "serde", derive(serde::Serialize))]
 pub struct FileMagic {
     pub kind: &'static str,
     pub magic: &'static [u8],

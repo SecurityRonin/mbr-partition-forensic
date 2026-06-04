@@ -14,8 +14,11 @@ const BOOT_SIG: [u8; 2] = [0x55, 0xAA];
 
 /// A parsed 512-byte MBR sector.
 #[derive(Debug, Clone)]
+#[cfg_attr(feature = "serde", derive(serde::Serialize))]
 pub struct MbrSector {
-    /// First 446 bytes: bootstrap code area.
+    /// First 446 bytes: bootstrap code area. Not serialized (its identity is
+    /// captured by `MbrAnalysis::boot_code_id`; serde has no array impl past 32).
+    #[cfg_attr(feature = "serde", serde(skip))]
     pub boot_code: [u8; BOOT_CODE_LEN],
     /// Windows-NT-style disk serial at offset 440 (little-endian u32).
     /// Pre-NT MBRs leave this as zero or random data.

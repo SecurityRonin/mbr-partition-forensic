@@ -12,6 +12,7 @@ use crate::entropy::{self, HIGH_ENTROPY_THRESHOLD};
 
 /// The dominant fill pattern of a byte region.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[cfg_attr(feature = "serde", derive(serde::Serialize))]
 pub enum FillPattern {
     /// Entirely `0x00` — ordinary unallocated space (not a deliberate-wipe signal).
     Zeros,

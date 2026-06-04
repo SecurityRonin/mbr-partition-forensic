@@ -2,6 +2,7 @@
 
 /// A region of unpartitioned disk space.
 #[derive(Debug, Clone, PartialEq, Eq)]
+#[cfg_attr(feature = "serde", derive(serde::Serialize))]
 pub struct Gap {
     /// First LBA of the unpartitioned region.
     pub lba_start: u64,
@@ -15,6 +16,7 @@ pub struct Gap {
 
 /// Classification of a gap's position on the disk.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[cfg_attr(feature = "serde", derive(serde::Serialize))]
 pub enum GapKind {
     /// Space between LBA 0 (MBR sector) and the first partition.
     PrePartition,

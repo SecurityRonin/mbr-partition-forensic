@@ -2,6 +2,7 @@
 
 /// Decoded CHS (Cylinder-Head-Sector) address.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[cfg_attr(feature = "serde", derive(serde::Serialize))]
 pub struct Chs {
     pub cylinder: u16,
     pub head: u8,
@@ -82,6 +83,7 @@ const CHS_MAX_CYLINDER: u16 = 1023;
 
 /// Outcome of comparing a CHS address against its companion LBA value.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[cfg_attr(feature = "serde", derive(serde::Serialize))]
 pub enum ChsConsistency {
     /// CHS translates to the LBA (or is the accepted overflow marker).
     Consistent,
@@ -127,6 +129,7 @@ pub fn chs_consistency(chs: Chs, lba: u32, hpc: u8, spt: u8) -> ChsConsistency {
 
 /// A single 16-byte primary partition table entry.
 #[derive(Debug, Clone, PartialEq, Eq)]
+#[cfg_attr(feature = "serde", derive(serde::Serialize))]
 pub struct PartitionEntry {
     /// `0x80` = bootable, `0x00` = inactive, other values are invalid.
     pub status: u8,
@@ -185,6 +188,7 @@ impl PartitionEntry {
 
 /// Wrapper around an MBR partition type byte with semantic helpers.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+#[cfg_attr(feature = "serde", derive(serde::Serialize))]
 pub struct TypeCode(pub u8);
 
 impl TypeCode {
@@ -280,6 +284,7 @@ impl TypeCode {
 
 /// High-level classification of a partition type.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[cfg_attr(feature = "serde", derive(serde::Serialize))]
 pub enum PartitionFamily {
     Empty,
     Fat12,

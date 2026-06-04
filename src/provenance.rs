@@ -15,6 +15,7 @@ use crate::boot_code::BootCodeId;
 
 /// Alignment class of a partition's start LBA.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[cfg_attr(feature = "serde", derive(serde::Serialize))]
 pub enum Alignment {
     /// Aligned to a 1 MiB / 2048-sector boundary (modern convention).
     Mib1,
@@ -26,6 +27,7 @@ pub enum Alignment {
 
 /// Inferred era of the tool that created the partition layout.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[cfg_attr(feature = "serde", derive(serde::Serialize))]
 pub enum PartitioningEra {
     /// 1 MiB alignment / Vista-plus boot code — modern tooling.
     Modern,

@@ -2,6 +2,7 @@
 
 /// Identity of the boot code in the first 446 bytes of the MBR.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[cfg_attr(feature = "serde", derive(serde::Serialize))]
 pub enum BootCodeId {
     /// Windows Vista / Server 2008 MBR boot code.
     WindowsVista,

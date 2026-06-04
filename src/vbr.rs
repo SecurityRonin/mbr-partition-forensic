@@ -13,6 +13,7 @@
 
 /// Parsed BIOS Parameter Block fields relevant to forensic cross-checking.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[cfg_attr(feature = "serde", derive(serde::Serialize))]
 pub struct Bpb {
     /// Bytes per logical sector (512, 1024, 2048, or 4096).
     pub bytes_per_sector: u16,

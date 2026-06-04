@@ -17,6 +17,7 @@
 /// One boot-sector-malware marker: a family `name` and the literal `needle`
 /// bytes that, if present anywhere in the boot code, identify it.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[cfg_attr(feature = "serde", derive(serde::Serialize))]
 pub struct BootSignature {
     /// Malware family / variant name reported on a match.
     pub name: &'static str,

@@ -13,6 +13,7 @@
 
 /// A set of disks that share one non-zero NT disk signature.
 #[derive(Debug, Clone, PartialEq, Eq)]
+#[cfg_attr(feature = "serde", derive(serde::Serialize))]
 pub struct SignatureCollision {
     /// The shared 4-byte signature value.
     pub signature: u32,

@@ -6,6 +6,7 @@
 
 /// Filesystem type detected from a partition's first-sector bytes.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[cfg_attr(feature = "serde", derive(serde::Serialize))]
 pub enum DetectedFs {
     /// Linux ext2/3/4 — magic `0x53EF` at offset 0x438 (1080).
     Ext,

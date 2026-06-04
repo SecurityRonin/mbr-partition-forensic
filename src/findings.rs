@@ -28,6 +28,7 @@ const PRE_PARTITION_BENIGN_LBA: u64 = 63;
 
 /// Severity level of a forensic anomaly.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
+#[cfg_attr(feature = "serde", derive(serde::Serialize))]
 pub enum Severity {
     /// Informational — worth noting but not inherently suspicious.
     Info,
@@ -58,6 +59,7 @@ impl fmt::Display for Severity {
 /// Construct via [`Anomaly::new`] — the `severity`, `code`, and `note` fields
 /// are derived from `kind` so they can never drift out of sync with it.
 #[derive(Debug, Clone)]
+#[cfg_attr(feature = "serde", derive(serde::Serialize))]
 pub struct Anomaly {
     /// Severity, derived from [`AnomalyKind::severity`].
     pub severity: Severity,
@@ -103,6 +105,7 @@ impl fmt::Display for Anomaly {
 /// severity, stable code, and human note. This makes anomalies trivially
 /// serializable and keeps the detection sites free of presentation logic.
 #[derive(Debug, Clone, PartialEq)]
+#[cfg_attr(feature = "serde", derive(serde::Serialize))]
 pub enum AnomalyKind {
     // ── MBR structure ────────────────────────────────────────────────────────
     /// Bytes 444–445 (Windows disk-signature reserved field) are non-zero.
@@ -477,6 +480,7 @@ fn gap_note(label: &str, lba_start: u64, lba_end: u64, byte_size: u64) -> String
 
 /// Per-partition summary enriched with forensic metadata.
 #[derive(Debug, Clone)]
+#[cfg_attr(feature = "serde", derive(serde::Serialize))]
 pub struct PartitionSummary {
     /// Index in the primary table (0–3) or EBR chain (4+).
     pub index: usize,
@@ -496,6 +500,7 @@ pub struct PartitionSummary {
 
 /// Top-level result of a full MBR forensic analysis.
 #[derive(Debug)]
+#[cfg_attr(feature = "serde", derive(serde::Serialize))]
 pub struct MbrAnalysis {
     /// Parsed MBR sector.
     pub mbr: MbrSector,

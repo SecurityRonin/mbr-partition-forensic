@@ -32,6 +32,7 @@ const BOOT_SIG: usize = 510;
 
 /// A single link in the EBR chain.
 #[derive(Debug, Clone)]
+#[cfg_attr(feature = "serde", derive(serde::Serialize))]
 pub struct EbrEntry {
     /// Absolute byte offset of this EBR sector in the disk image.
     pub ebr_offset: u64,
@@ -49,6 +50,7 @@ pub struct EbrEntry {
 
 /// Result of walking the full EBR chain.
 #[derive(Debug, Clone, Default)]
+#[cfg_attr(feature = "serde", derive(serde::Serialize))]
 pub struct EbrChain {
     pub entries: Vec<EbrEntry>,
     /// `true` if the chain was terminated by a cycle rather than a zero next pointer.
