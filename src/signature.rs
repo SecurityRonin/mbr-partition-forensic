@@ -45,8 +45,13 @@ const FAT_OEM_IDS: &[&[u8]] = &[
     b"FreeDOS ",
 ];
 
-/// Attempt to identify the filesystem from up to 512 bytes of a partition's
-/// first sector.  Returns [`DetectedFs::Unknown`] if nothing matches.
+/// Attempt to identify the filesystem from a partition's first sectors.
+/// Returns [`DetectedFs::Unknown`] if nothing matches.
+///
+/// The shared filesystem magics (ext/NTFS/exFAT/XFS/LUKS/FAT/swap) come from the
+/// [`forensicnomicon::filesystems`] knowledge base; a few mbr-specific detections
+/// not (yet) in that table — APFS, the FAT OEM-ID heuristic, the `PAGESPACE1`
+/// swap variant, LVM, and Btrfs — remain local fallbacks.
 #[must_use]
 pub fn detect(sector: &[u8]) -> DetectedFs {
     if sector.is_empty() {
@@ -56,54 +61,26 @@ pub fn detect(sector: &[u8]) -> DetectedFs {
         return DetectedFs::AllZeros;
     }
 
-    // LUKS: magic at bytes 0–5.
-    if sector.len() >= 6 && &sector[0..6] == b"LUKS\xba\xbe" {
-        return DetectedFs::Luks;
+    if let Some(fs) = forensicnomicon::filesystems::detect_name(sector).and_then(map_fs_name) {
+        return fs;
     }
 
-    // APFS: magic at bytes 0–3.
+    // APFS container superblock magic at the start of the window.
     if sector.len() >= 4 && &sector[0..4] == b"NXSB" {
         return DetectedFs::Apfs;
     }
-
-    // XFS: magic at bytes 0–3.
-    if sector.len() >= 4 && &sector[0..4] == b"XFSB" {
-        return DetectedFs::Xfs;
-    }
-
-    // NTFS: OEM ID at bytes 3–10.
-    if sector.len() >= 11 && &sector[3..11] == b"NTFS    " {
-        return DetectedFs::Ntfs;
-    }
-
-    // exFAT: OEM name at bytes 3–10.
-    if sector.len() >= 11 && &sector[3..11] == b"EXFAT   " {
-        return DetectedFs::ExFat;
-    }
-
     // FAT: OEM ID at bytes 3–10, matched against well-known formatter strings.
     if sector.len() >= 11 && FAT_OEM_IDS.iter().any(|id| *id == &sector[3..11]) {
         return DetectedFs::Fat;
     }
-
-    // ext2/3/4: superblock magic 0x53EF at offset 1080 (within a 1 KiB+
-    // block).  Only detectable if the slice is ≥ 1082 bytes.
-    if sector.len() >= 1082 && sector[1080] == 0x53 && sector[1081] == 0xEF {
-        return DetectedFs::Ext;
-    }
-
-    // Linux swap: magic at offset 4086 (end of page − 10 bytes).
-    if sector.len() >= 4096
-        && (&sector[4086..4096] == b"SWAPSPACE2" || &sector[4086..4096] == b"PAGESPACE1")
-    {
+    // Older AIX/Linux paging signature `PAGESPACE1` (SWAPSPACE2 is in the KB).
+    if sector.len() >= 4096 && &sector[4086..4096] == b"PAGESPACE1" {
         return DetectedFs::LinuxSwap;
     }
-
     // Linux LVM2: "LABELONE" within the first 512 bytes.
     if find_substr(sector, b"LABELONE").is_some_and(|pos| pos < 512) {
         return DetectedFs::LinuxLvm;
     }
-
     // Btrfs: superblock magic "_BHRfS_M" at offset 64 KiB. Only detectable when
     // the caller supplies a fingerprint window large enough to reach it.
     if sector.len() >= 65536 + 8 && &sector[65536..65536 + 8] == b"_BHRfS_M" {
@@ -111,6 +88,21 @@ pub fn detect(sector: &[u8]) -> DetectedFs {
     }
 
     DetectedFs::Unknown
+}
+
+/// Map a `forensicnomicon::filesystems` name to this crate's [`DetectedFs`].
+/// Returns `None` for names with no corresponding variant (ISO 9660, HFS+).
+fn map_fs_name(name: &str) -> Option<DetectedFs> {
+    Some(match name {
+        "ext2/3/4" => DetectedFs::Ext,
+        "NTFS" => DetectedFs::Ntfs,
+        "exFAT" => DetectedFs::ExFat,
+        "XFS" => DetectedFs::Xfs,
+        "LUKS" => DetectedFs::Luks,
+        "Linux swap" => DetectedFs::LinuxSwap,
+        "FAT32" | "FAT16" | "FAT12" => DetectedFs::Fat,
+        _ => return None,
+    })
 }
 
 /// Returns `true` when a declared partition family and a detected filesystem
