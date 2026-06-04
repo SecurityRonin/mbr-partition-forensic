@@ -14,13 +14,20 @@ exclude = ["fuzz/", ".github/", ".pre-commit-config.yaml", "deny.toml", "renovat
 thiserror = "2"
 tracing = { version = "0.1", optional = true }
 serde = { version = "1", features = ["derive"], optional = true }
+# Sibling crate: when a disk turns out to be GPT, its real GUID Partition Table
+# is parsed automatically. On by default via the `gpt` feature.
+gpt-forensic = { path = "../gpt-forensic", optional = true }
 
 [features]
-default = []
+default = ["gpt"]
 # Forward internal diagnostics to the `tracing` ecosystem for structured,
 # level-filtered debugging. Off by default — zero logging dependency.
 trace = ["dep:tracing"]
-serde = ["dep:serde"]
+serde = ["dep:serde", "gpt-forensic?/serde"]
+# Automatically parse the real GPT (via gpt-forensic) when a protective MBR /
+# EFI PART header is detected. Disable with --no-default-features for a pure,
+# dependency-free MBR parser.
+gpt = ["dep:gpt-forensic"]
 
 [dev-dependencies]
 tempfile = "3"
