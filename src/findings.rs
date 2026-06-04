@@ -511,6 +511,11 @@ pub struct MbrAnalysis {
     pub disk_serial: u32,
     /// Inferred partitioner / era from layout geometry and boot code.
     pub era: crate::provenance::PartitioningEra,
+    /// When the disk turns out to be GPT (an `EFI PART` header at LBA 1), the
+    /// real GUID Partition Table parsed automatically via `gpt-forensic`.
+    /// `None` for legacy-MBR disks. Requires the default `gpt` feature.
+    #[cfg(feature = "gpt")]
+    pub gpt: Option<gpt_forensic::GptAnalysis>,
     /// All detected anomalies, in discovery order.
     pub anomalies: Vec<Anomaly>,
 }

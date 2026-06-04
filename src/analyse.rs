@@ -133,6 +133,15 @@ pub fn analyse<R: Read + Seek>(reader: &mut R, disk_size_bytes: u64) -> Result<M
     let gaps = check_gaps(&scan.extents, disk_size_bytes, last_lba, &mut findings);
     check_gap_content(reader, &gaps, &mut findings);
 
+    // When the disk turns out to be GPT, parse the real GUID Partition Table
+    // automatically via the sibling gpt-forensic crate.
+    #[cfg(feature = "gpt")]
+    let gpt = if gpt_header {
+        gpt_forensic::analyse(reader, disk_size_bytes).ok()
+    } else {
+        None
+    };
+
     let disk_serial = mbr.disk_serial;
     let era = crate::provenance::infer_era(first_partition_lba(&mbr), boot_code_id);
     diag::analysis_complete(
@@ -150,6 +159,8 @@ pub fn analyse<R: Read + Seek>(reader: &mut R, disk_size_bytes: u64) -> Result<M
         boot_code_id,
         disk_serial,
         era,
+        #[cfg(feature = "gpt")]
+        gpt,
         anomalies: findings.anomalies,
     })
 }
