@@ -8,12 +8,6 @@
 
 Forensic-grade Master Boot Record (MBR) parser for Rust. Goes beyond partition enumeration to surface structural anomalies, slack-space content, anti-forensic indicators, and cross-field inconsistencies that every other MBR crate silently ignores.
 
-## Command-line tool
-
-```console
-$ cargo run --bin mbr-forensic -- disk.img
-```
-
 ```text
 MBR Forensic Analysis
   disk signature : 0x00000000
@@ -32,11 +26,13 @@ GPT cross-check: 2 partition entries, 0 GPT anomalies
 Highest severity: INFO
 ```
 
-The binary exits `0` when clean and `1` when any anomaly is present, so it drops
-straight into a triage pipeline. Add `--json` (with `--features serde`) for
-machine-readable output. When a protective MBR is found, the real GPT is parsed
-automatically (via [`gpt-forensic`](https://github.com/SecurityRonin/gpt-forensic))
-and cross-checked.
+`mbr-forensic` is a **library** (use `mbr_forensic::report::text_report` to render
+the above; when a protective MBR is found the real GPT is parsed automatically via
+[`gpt-forensic`](https://github.com/SecurityRonin/gpt-forensic) and cross-checked).
+For a ready-made command line that auto-detects the scheme and prints this for
+*any* disk, install the unified
+[`disk4n6`](https://github.com/SecurityRonin/disk-forensic) tool
+(`cargo install disk-forensic`).
 
 ## Rust library
 
