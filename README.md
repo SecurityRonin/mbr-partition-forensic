@@ -1,12 +1,27 @@
 # mbr-partition-forensic
 
-[![Crates.io](https://img.shields.io/crates/v/mbr-partition-forensic.svg)](https://crates.io/crates/mbr-partition-forensic)
+[![Crates.io: mbr-partition-forensic](https://img.shields.io/crates/v/mbr-partition-forensic.svg?label=mbr-partition-forensic)](https://crates.io/crates/mbr-partition-forensic)
+[![Crates.io: mbr-partition-core](https://img.shields.io/crates/v/mbr-partition-core.svg?label=mbr-partition-core)](https://crates.io/crates/mbr-partition-core)
 [![docs.rs](https://img.shields.io/docsrs/mbr-partition-forensic)](https://docs.rs/mbr-partition-forensic)
 [![License: MIT](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
 [![CI](https://github.com/SecurityRonin/mbr-partition-forensic/actions/workflows/ci.yml/badge.svg)](https://github.com/SecurityRonin/mbr-partition-forensic/actions)
 [![Sponsor](https://img.shields.io/badge/sponsor-h4x0r-ea4aaa?logo=github-sponsors)](https://github.com/sponsors/h4x0r)
 
-Forensic-grade Master Boot Record (MBR) parser for Rust. Goes beyond partition enumeration to surface structural anomalies, slack-space content, anti-forensic indicators, and cross-field inconsistencies that every other MBR crate silently ignores.
+**Every other MBR crate tells you what partitions exist. This one tells you what someone did to the disk.** Structural anomalies, gap and slack-space carving, wipe and bootkit indicators, and CHS/LBA/GPT/VBR cross-checks — each returned as a graded, machine-readable finding.
+
+```rust
+use mbr_partition_forensic::analyse;
+use std::fs::File;
+
+let mut f = File::open("disk.img")?;
+let size = f.metadata()?.len();
+let analysis = analyse(&mut f, size)?;
+
+for a in &analysis.anomalies {
+    println!("[{:?}] {} @ {:#x}  {}", a.severity, a.kind.code(), a.offset, a.note);
+}
+# Ok::<(), mbr_partition_forensic::Error>(())
+```
 
 ```text
 MBR Forensic Analysis
@@ -26,94 +41,82 @@ GPT cross-check: 2 partition entries, 0 GPT anomalies
 Highest severity: INFO
 ```
 
-`mbr-partition-forensic` is a **library** that returns the analysis above as typed
-findings; when a protective MBR is found the real GPT is parsed automatically via
-[`gpt-forensic`](https://github.com/SecurityRonin/gpt-forensic) and cross-checked. The
-pure parser layer lives in the sibling [`mbr-partition-core`](https://crates.io/crates/mbr-partition-core)
-crate, re-exported here so a single dependency gives you both.
-For a ready-made command line that auto-detects the scheme and prints this for
-*any* disk, install the unified
+When a protective MBR is found, the real GPT is parsed automatically (via the
+default `gpt` feature, backed by
+[`gpt-partition-forensic`](https://crates.io/crates/gpt-partition-forensic)) and
+cross-checked. For a ready-made command line that auto-detects the scheme and
+prints this for *any* disk, install the unified
 [`disk4n6`](https://github.com/SecurityRonin/disk-forensic) tool
 (`cargo install disk-forensic`).
 
-## Rust library
+## Two crates, one dependency
+
+| Crate | Role |
+|---|---|
+| [`mbr-partition-core`](https://crates.io/crates/mbr-partition-core) | **Reader** — pure, read-only MBR decode over `Read + Seek`: the 512-byte boot sector, four primary entries, EBR chains, CHS/LBA geometry, GPT/VBR cross-validation primitives, boot-code and filesystem fingerprints. No findings. Imported as `mbr`. |
+| [`mbr-partition-forensic`](https://crates.io/crates/mbr-partition-forensic) | **Analyzer** — layers anomaly detection on top and emits graded [`forensicnomicon::report::Finding`](https://crates.io/crates/forensicnomicon) values. Re-exports every reader type, so a single dependency gives you both. |
 
 ```toml
 [dependencies]
-mbr-partition-forensic = "0.4"
+mbr-partition-forensic = "0.4"   # analyzer (re-exports the reader)
+# or, reader only:
+mbr-partition-core = "0.4"
 ```
 
-## Quick start
+## Anomaly codes
 
-```rust
-use mbr_partition_forensic::{parse_mbr_sector, analyse};
-use std::fs::File;
+Each detected condition carries a stable, machine-readable `code` and a graded
+`Severity` (`Info` < `Low` < `Medium` < `High` < `Critical`). Codes are a
+published contract — they do not change once shipped. The current set:
 
-// Pure parsing from a 512-byte buffer — no I/O, no panics:
-let mut f = File::open("disk.img")?;
-let analysis = analyse(&mut f, disk_size_bytes)?;
+| `code` | Condition |
+|---|---|
+| `MBR-RESERVED-NONZERO` | Reserved bytes (444–445) are non-zero |
+| `MBR-BOOT-MULTI` | More than one partition has the `0x80` boot flag |
+| `MBR-BOOT-NONE` | Active partitions present, but none marked bootable |
+| `MBR-DISKSIG-ZERO` | NT disk signature (offset 440) is zero |
+| `MBR-BOOT-MALWARE` | Boot code matches a known bootkit signature |
+| `MBR-PART-RESIDUAL` | Type `0x00` but non-zero LBA fields — deleted partition residue |
+| `MBR-PART-STATUS` | Partition status byte is neither `0x00` nor `0x80` |
+| `MBR-PART-DUPLICATE` | Two partition entries describe the same region |
+| `MBR-PART-OVERLAP` | LBA ranges of two partitions intersect |
+| `MBR-PART-OOB` | Partition end exceeds the reported disk size |
+| `MBR-PART-CHSLBA` | CHS-encoded geometry disagrees with the LBA fields |
+| `MBR-PART-SIGMISMATCH` | Declared type ≠ detected filesystem magic |
+| `MBR-GPT-HYBRID` | Hybrid MBR (MBR and GPT both describe partitions) |
+| `MBR-GPT-UNDERSIZED` | Protective MBR entry smaller than the disk |
+| `MBR-GPT-HIDDEN` | GPT header present but no protective MBR entry |
+| `MBR-GPT-SPOOFED` | Protective MBR layout inconsistent with the GPT |
+| `MBR-EBR-CYCLE` | EBR next-pointer chain forms a loop |
+| `MBR-EBR-DEPTH` | EBR chain exceeds the depth cap (64 levels) |
+| `MBR-EBR-SLACK` | EBR entries 2–3 contain non-zero (slack) bytes |
+| `MBR-GAP-PRE` | Unpartitioned space before the first partition |
+| `MBR-GAP-MID` | Unpartitioned gap between partitions |
+| `MBR-GAP-POST` | Trailing space after the last partition |
+| `MBR-GAP-WIPED` | A gap region carries a deliberate wipe pattern |
+| `MBR-CARVE-ARTIFACT` | A file artifact carved from slack/gap space |
+| `MBR-VBR-HIDDEN` | VBR hidden-sector count disagrees with the partition LBA |
+| `MBR-BOOT-WIPED` | Boot code is all zeros — likely wiped |
+| `MBR-BOOT-PROTECTIVE-EMPTY` | Empty boot code on a GPT/UEFI disk (expected; informational) |
+| `MBR-BOOT-ERASED` | Boot code is all `0xFF` — likely erased |
+| `MBR-BOOT-UNKNOWN` | Boot code matches no known signature |
+| `MBR-SLACK-ENTROPY` | High-entropy bytes in a slack region — possible hidden data |
 
-for anomaly in &analysis.anomalies {
-    println!("[{:?}] offset {:#x}  {}", anomaly.severity, anomaly.offset, anomaly.note);
-}
-# Ok::<(), mbr_partition_forensic::Error>(())
-```
-
-## What makes this different from every other MBR crate
-
-Most MBR crates answer one question: "what partitions are on this disk?" `mbr-partition-forensic` answers the questions a digital forensics examiner actually needs:
-
-| Feature | Other MBR crates | mbr-partition-forensic |
-|---|---|---|
-| Partition enumeration | ✅ | ✅ |
-| Boot code identification (GRUB 2, Windows, Syslinux …) | ✗ | ✅ |
-| Wiped / erased boot code detection | ✗ | ✅ |
-| Residual (deleted) partition entries | ✗ | ✅ |
-| Declared type vs detected filesystem mismatch | ✗ | ✅ |
-| Unpartitioned gap analysis (pre / between / post) | ✗ | ✅ |
-| Extended partition EBR chain traversal | partial | ✅ full |
-| EBR slack-byte inspection | ✗ | ✅ |
-| EBR cycle / excessive-depth detection | ✗ | ✅ |
-| NT disk serial (offset 440) | ✗ | ✅ |
-| Reserved byte audit (offset 444–445) | ✗ | ✅ |
-| CHS ↔ LBA cross-validation | ✗ | ✅ |
-| Shannon entropy on slack regions | ✗ | ✅ |
-| Adversarial-input hardening + fuzz testing | ✗ | ✅ |
-
-## Anomaly types
-
-Every detected condition is returned as an `Anomaly { severity, kind, offset, note }`:
-
-```
-NonZeroReserved          bytes 444–445 non-zero
-MultipleBootable         > 1 partition has 0x80 status
-NoBootablePartition      active partitions but none marked bootable
-ResidualEntry            type=0x00 but non-zero LBA fields → deleted partition
-OverlappingPartitions    LBA range intersection between two entries
-OutOfBounds              partition end exceeds reported disk size
-ChsLbaInconsistency      CHS-encoded values disagree with LBA
-EbrCycle                 EBR next-pointer forms a loop
-EbrExcessiveDepth        EBR chain exceeds 64 levels
-EbrSlackData             EBR entries 2–3 contain non-zero bytes
-PrePartitionSpace        sectors before the first partition
-InterPartitionGap        unpartitioned space between partitions
-PostPartitionSpace       trailing space after the last partition
-SignatureMismatch        declared type ≠ detected filesystem magic
-WipedBootCode            boot code is all zeros
-ErasedBootCode           boot code is all 0xFF
-UnknownBootCode          boot code matches no known signature
-HighEntropySlack         high-entropy bytes in a slack region
-```
+Findings are observations, never legal conclusions — the examiner or tribunal
+draws the conclusion.
 
 ## Filesystem fingerprinting
 
-`mbr-partition-forensic` reads the first sector of each partition and matches it against known magic bytes, independently of the declared partition type. A mismatch between the declared type and the detected filesystem is surfaced as a `SignatureMismatch` anomaly.
+The analyzer reads the first sector of each partition and matches it against
+known magic bytes, independently of the declared partition type; a mismatch is
+surfaced as `MBR-PART-SIGMISMATCH`. Detected types (`DetectedFs`): `Ext`
+(ext2/3/4), `Ntfs`, `Fat`, `ExFat`, `Apfs`, `Xfs`, `LinuxSwap`, `LinuxLvm`,
+`Luks`, `AllZeros`, `Unknown`.
 
-Detected filesystem types: `Ext` (ext2/3/4), `Ntfs`, `Fat`, `ExFat`, `Apfs`, `Xfs`, `LinuxSwap`, `LinuxLvm`, `Luks`, `AllZeros`, `Unknown`.
+## Boot-code identification
 
-## Boot code identification
-
-The first 446 bytes of the MBR are matched against signatures for known bootloaders:
+The first 446 bytes are matched against signatures for known bootloaders
+(`BootCodeId`):
 
 | `BootCodeId` | Description |
 |---|---|
@@ -123,7 +126,7 @@ The first 446 bytes of the MBR are matched against signatures for known bootload
 | `GrubLegacy` | GRUB Legacy stage1 |
 | `Syslinux` | Syslinux / EXTLINUX |
 | `AllZeros` | Wiped — all zeros |
-| `AllOnes` | Erased — all 0xFF |
+| `AllOnes` | Erased — all `0xFF` |
 | `Unknown` | No known signature matched |
 
 ## API
@@ -152,8 +155,7 @@ use mbr_partition_forensic::analyse;
 use std::fs::File;
 
 let mut f = File::open("disk.img")?;
-let meta = f.metadata()?;
-let analysis = analyse(&mut f, meta.len())?;
+let analysis = analyse(&mut f, f.metadata()?.len())?;
 
 println!("Boot code: {:?}", analysis.boot_code_id);
 println!("Partitions: {}", analysis.partitions.len());
@@ -161,7 +163,7 @@ println!("Gaps: {}", analysis.gaps.len());
 println!("Anomalies: {}", analysis.anomalies.len());
 
 for a in analysis.anomalies.iter().filter(|a| a.severity >= mbr_partition_forensic::Severity::Medium) {
-    println!("  [{:?}] {}", a.severity, a.note);
+    println!("  [{:?}] {} {}", a.severity, a.kind.code(), a.note);
 }
 # Ok::<(), mbr_partition_forensic::Error>(())
 ```
@@ -178,15 +180,23 @@ if e > 6.0 {
 }
 ```
 
-## Security
+## Trust but verify
 
-`mbr-partition-forensic` is designed for use on untrusted disk images from potentially compromised systems:
+`mbr-partition-forensic` is built to run on untrusted disk images from
+potentially compromised systems:
 
-- **No panics on malicious input** — all arithmetic uses checked or saturating operations; fuzz-tested with `cargo fuzz`
-- **EBR cycle detection** — visited-LBA set prevents infinite loops
-- **Overflow-safe EBR chain** — `checked_add` terminates the chain on arithmetic overflow
-- **Depth cap** — EBR chains exceeding 64 levels are flagged and stopped
-- **Truncation-safe** — read errors on truncated images terminate traversal gracefully rather than propagating
+- **Panic-free on malicious input** — bounds-checked reads, checked/saturating
+  arithmetic; no `unwrap`/`expect`/`panic!` in production code (enforced by
+  `clippy::unwrap_used`/`expect_used = deny`).
+- **EBR hardening** — a visited-LBA set prevents infinite loops (`MBR-EBR-CYCLE`),
+  `checked_add` terminates on overflow, and a 64-level depth cap stops runaway
+  chains (`MBR-EBR-DEPTH`).
+- **Truncation-safe** — read errors on truncated images terminate traversal
+  gracefully rather than propagating.
+- **Fuzzed** — `cargo fuzz` targets `fuzz_parse` (the pure sector parser) and
+  `fuzz_forensic` (the full analysis pipeline); each invariant is "must not panic".
+- **Validated against real artifacts**, not only synthetic fixtures, with the
+  full suite verified in CI.
 
 ### Running the fuzz targets
 
@@ -195,13 +205,15 @@ if e > 6.0 {
 rustup install nightly
 cargo install cargo-fuzz
 
-cargo +nightly fuzz run parse_mbr_sector
-cargo +nightly fuzz run analyse_full
+cargo +nightly fuzz run fuzz_parse
+cargo +nightly fuzz run fuzz_forensic
 ```
 
 ## Debugging with the `trace` feature
 
-`mbr-partition-forensic` has no logging dependency by default. Enable the `trace` feature to forward every analysis event — each recorded anomaly, the run summary, EBR walk failures, and partition read errors — to the [`tracing`](https://docs.rs/tracing) ecosystem:
+There is no logging dependency by default. Enable `trace` to forward every
+analysis event — each recorded anomaly, the run summary, EBR walk failures, and
+partition read errors — to the [`tracing`](https://docs.rs/tracing) ecosystem:
 
 ```toml
 [dependencies]
@@ -215,11 +227,10 @@ let analysis = mbr_partition_forensic::analyse(&mut reader, disk_size)?;
 # Ok::<(), mbr_partition_forensic::Error>(())
 ```
 
-All diagnostics live in one place (`src/diag.rs`), so the full set of observable events is discoverable at a glance.
+All diagnostics live in one place (`src/diag.rs`), so the full set of observable
+events is discoverable at a glance.
 
 ## Testing
-
-224 tests (unit + integration) covering every public API, every error path, every anomaly kind, and adversarial inputs (overflowing EBR chains, truncated images, seek failures). **100% function coverage with no uncovered lines** — verified in CI.
 
 ```bash
 cargo test                 # default features
@@ -233,11 +244,15 @@ cargo install cargo-llvm-cov
 cargo llvm-cov --show-missing-lines
 ```
 
-> Aggregate line coverage can read slightly under 100% because the generic, reader-agnostic functions are monomorphized once per reader type in the tests; `--show-missing-lines` confirms no source line is left uncovered.
+> Aggregate line coverage can read slightly under 100% because the generic,
+> reader-agnostic functions are monomorphized once per reader type in the tests;
+> `--show-missing-lines` confirms no source line is left uncovered.
 
 ## Related
 
-**mbr-partition-forensic** analyses the partition layout. To read the actual filesystem data that lives inside each partition, these crates provide `Read + Seek` over common disk container formats:
+`mbr-partition-forensic` analyses the partition layout. To read the actual
+filesystem data inside each partition, these crates provide `Read + Seek` over
+common disk container formats:
 
 | Crate | Format |
 |---|---|
@@ -250,7 +265,8 @@ cargo llvm-cov --show-missing-lines
 
 ## Sibling crates
 
-One forensic parser per partitioning scheme — each a pure `Read + Seek` library that composes with the container crates above:
+One forensic parser per partitioning scheme — each a pure `Read + Seek` library
+that composes with the container crates above:
 
 | Crate | Scheme |
 |---|---|

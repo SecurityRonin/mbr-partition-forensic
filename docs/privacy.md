@@ -1,12 +1,12 @@
 # Privacy Policy
 
-**mbr-forensic** is an open-source Rust library and command-line tool that runs
-entirely on your own machine.
+**mbr-partition-forensic** (and its reader crate **mbr-partition-core**) is an
+open-source Rust library that runs entirely on your own machine.
 
 - **No data collection.** The software does not transmit, upload, or share any
   data. Disk images and analysis results never leave your computer.
 - **No telemetry.** There is no analytics, crash reporting, phone-home, or
-  network activity of any kind in the library or CLI.
+  network activity of any kind in the library.
 - **No accounts.** The software requires no registration, login, or API key.
 
 Any files you analyse are read locally and the results are written only to the

@@ -1,8 +1,8 @@
 # Terms of Service
 
-**mbr-forensic** is free, open-source software licensed under the
-[MIT License](../LICENSE). These terms supplement, but do not override, that
-licence.
+**mbr-partition-forensic** (and its reader crate **mbr-partition-core**) is
+free, open-source software licensed under the [MIT License](../LICENSE). These
+terms supplement, but do not override, that licence.
 
 - **As-is, no warranty.** The software is provided "as is", without warranty of
   any kind, express or implied. The authors are not liable for any claim,
