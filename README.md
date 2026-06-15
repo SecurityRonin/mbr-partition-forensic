@@ -3,7 +3,7 @@
 [![Crates.io: mbr-partition-forensic](https://img.shields.io/crates/v/mbr-partition-forensic.svg?label=mbr-partition-forensic)](https://crates.io/crates/mbr-partition-forensic)
 [![Crates.io: mbr-partition-core](https://img.shields.io/crates/v/mbr-partition-core.svg?label=mbr-partition-core)](https://crates.io/crates/mbr-partition-core)
 [![docs.rs](https://img.shields.io/docsrs/mbr-partition-forensic)](https://docs.rs/mbr-partition-forensic)
-[![License: MIT](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
+[![License: Apache-2.0](https://img.shields.io/badge/License-Apache_2.0-blue.svg)](LICENSE)
 [![CI](https://github.com/SecurityRonin/mbr-partition-forensic/actions/workflows/ci.yml/badge.svg)](https://github.com/SecurityRonin/mbr-partition-forensic/actions)
 [![Sponsor](https://img.shields.io/badge/sponsor-h4x0r-ea4aaa?logo=github-sponsors)](https://github.com/sponsors/h4x0r)
 
