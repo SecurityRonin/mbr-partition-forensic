@@ -95,7 +95,7 @@ shipped) with a graded `Severity` (`Info` < `Low` < `Medium` < `High` <
 | `MBR-BOOT-WIPED` | Boot code is all zeros — likely wiped |
 | `MBR-BOOT-PROTECTIVE-EMPTY` | Empty boot code on a GPT/UEFI disk (expected; informational) |
 | `MBR-BOOT-ERASED` | Boot code is all `0xFF` — likely erased |
-| `MBR-BOOT-UNKNOWN` | Boot code matches no known signature |
+| `MBR-BOOT-UNKNOWN` | Boot code matches no known signature — surfaces the leading boot-code bytes (hex) so the unrecognised loader can be identified |
 | `MBR-SLACK-ENTROPY` | High-entropy bytes in a slack region — possible hidden data |
 
 Findings are observations, never legal conclusions — the examiner or tribunal

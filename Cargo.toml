@@ -5,7 +5,7 @@ members = ["core", "forensic"]
 # Single source of truth for fields shared by every member (DRY): bump version /
 # MSRV / license here once; members inherit via `field.workspace = true`.
 [workspace.package]
-version = "0.5.0"
+version = "0.5.1"
 edition = "2021"
 rust-version = "1.85"
 license = "Apache-2.0"
@@ -16,7 +16,7 @@ homepage = "https://github.com/SecurityRonin/mbr-partition-forensic"
 # members write `dep.workspace = true`. The inter-crate `mbr` version lives here
 # too, so a bump touches one line instead of every member + dev-dep.
 [workspace.dependencies]
-mbr = { path = "core", version = "0.5.0", package = "mbr-partition-core" }
+mbr = { path = "core", version = "0.5.1", package = "mbr-partition-core" }
 gpt-partition-forensic = "0.5.0"
 forensicnomicon = "0.5"
 thiserror = "2"
