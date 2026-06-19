@@ -279,12 +279,27 @@ fn read_mbr<R: Read + Seek>(reader: &mut R) -> Result<MbrSector, Error> {
 /// Unrecognised boot code is additionally entropy-scanned: near-maximal Shannon
 /// entropy in the 446-byte code area, with no matching loader, is consistent
 /// with a packed or encrypted bootkit payload and raises [`AnomalyKind::HighEntropySlack`].
+/// Hex of the leading boot-code bytes. The first 16 bytes carry the jump +
+/// entry stub that fingerprints a boot loader, so surfacing them lets an
+/// investigator identify an otherwise-"unknown" loader instead of hitting a
+/// dead end.
+fn boot_code_head_hex(boot_code: &[u8]) -> String {
+    boot_code
+        .iter()
+        .take(16)
+        .map(|b| format!("{b:02x}"))
+        .collect::<Vec<_>>()
+        .join(" ")
+}
+
 fn check_boot_code(mbr: &MbrSector, id: BootCodeId, on_gpt_disk: bool, findings: &mut Findings) {
     let kind = match id {
         BootCodeId::AllZeros if on_gpt_disk => Some(AnomalyKind::EmptyProtectiveBootCode),
         BootCodeId::AllZeros => Some(AnomalyKind::WipedBootCode),
         BootCodeId::AllOnes => Some(AnomalyKind::ErasedBootCode),
-        BootCodeId::Unknown => Some(AnomalyKind::UnknownBootCode),
+        BootCodeId::Unknown => Some(AnomalyKind::UnknownBootCode {
+            boot_code_hex: boot_code_head_hex(&mbr.boot_code),
+        }),
         _ => None,
     };
     if let Some(kind) = kind {

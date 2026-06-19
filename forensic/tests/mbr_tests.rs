@@ -873,7 +873,7 @@ fn analyse_detects_unknown_boot_code() {
     assert!(analysis
         .anomalies
         .iter()
-        .any(|a| a.kind == AnomalyKind::UnknownBootCode));
+        .any(|a| matches!(a.kind, AnomalyKind::UnknownBootCode { .. })));
 }
 
 #[test]
@@ -1208,7 +1208,9 @@ fn all_kinds() -> Vec<AnomalyKind> {
         },
         AnomalyKind::WipedBootCode,
         AnomalyKind::ErasedBootCode,
-        AnomalyKind::UnknownBootCode,
+        AnomalyKind::UnknownBootCode {
+            boot_code_hex: String::new(),
+        },
         AnomalyKind::HighEntropySlack {
             offset: 446,
             entropy: 7.5,
@@ -1399,7 +1401,13 @@ fn severity_medium_kinds() {
 
 #[test]
 fn severity_low_and_info_kinds() {
-    assert_eq!(AnomalyKind::UnknownBootCode.severity(), Severity::Low);
+    assert_eq!(
+        AnomalyKind::UnknownBootCode {
+            boot_code_hex: String::new()
+        }
+        .severity(),
+        Severity::Low
+    );
     assert_eq!(AnomalyKind::NoBootablePartition.severity(), Severity::Info);
     assert_eq!(
         AnomalyKind::PostPartitionSpace {

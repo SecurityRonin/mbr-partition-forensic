@@ -42,11 +42,21 @@ impl forensicnomicon::report::Observation for Anomaly {
     }
     fn evidence(&self) -> Vec<forensicnomicon::report::Evidence> {
         // The anomaly's byte offset travels with the finding as evidence.
-        vec![forensicnomicon::report::Evidence {
+        let mut ev = vec![forensicnomicon::report::Evidence {
             field: "offset".to_string(),
             value: format!("{:#x}", self.offset),
             location: Some(forensicnomicon::report::Location::ByteOffset(self.offset)),
-        }]
+        }];
+        // Surface the raw offending value for any kind that carries one, so an
+        // "unrecognised X" finding hands the investigator the actual X.
+        if let AnomalyKind::UnknownBootCode { boot_code_hex } = &self.kind {
+            ev.push(forensicnomicon::report::Evidence {
+                field: "boot_code".to_string(),
+                value: boot_code_hex.clone(),
+                location: Some(forensicnomicon::report::Location::ByteOffset(self.offset)),
+            });
+        }
+        ev
     }
 }
 
@@ -223,8 +233,10 @@ pub enum AnomalyKind {
     EmptyProtectiveBootCode,
     /// Boot code is all `0xFF` — likely factory-erased or deliberately wiped.
     ErasedBootCode,
-    /// Boot code did not match any known signature.
-    UnknownBootCode,
+    /// Boot code did not match any known signature. Carries the leading bytes of
+    /// the unrecognised boot code (hex) so the actual value is surfaced for
+    /// investigation rather than hidden behind "unknown".
+    UnknownBootCode { boot_code_hex: String },
     /// Slack region has Shannon entropy above the threshold (data may be hidden).
     HighEntropySlack { offset: u64, entropy: f64 },
 }
@@ -284,7 +296,7 @@ impl AnomalyKind {
             | K::SignatureMismatch { .. } => Severity::Medium,
 
             // Low — minor deviation / notable leftover data.
-            K::UnknownBootCode | K::CarvedArtifact { .. } => Severity::Low,
+            K::UnknownBootCode { .. } | K::CarvedArtifact { .. } => Severity::Low,
 
             // Info — noted, not suspicious.
             K::NoBootablePartition | K::PostPartitionSpace { .. } | K::EmptyProtectiveBootCode => {
@@ -327,7 +339,7 @@ impl AnomalyKind {
             K::WipedBootCode => "MBR-BOOT-WIPED",
             K::EmptyProtectiveBootCode => "MBR-BOOT-PROTECTIVE-EMPTY",
             K::ErasedBootCode => "MBR-BOOT-ERASED",
-            K::UnknownBootCode => "MBR-BOOT-UNKNOWN",
+            K::UnknownBootCode { .. } => "MBR-BOOT-UNKNOWN",
             K::HighEntropySlack { .. } => "MBR-SLACK-ENTROPY",
         }
     }
@@ -460,7 +472,9 @@ impl AnomalyKind {
             K::ErasedBootCode => {
                 "Boot code is all 0xFF — factory-erased or deliberate wipe".to_string()
             }
-            K::UnknownBootCode => "Boot code signature not recognised".to_string(),
+            K::UnknownBootCode { boot_code_hex } => {
+                format!("Boot code signature not recognised; boot code begins {boot_code_hex}")
+            }
             K::HighEntropySlack { offset, entropy } => {
                 format!("High-entropy slack at offset {offset} (entropy {entropy:.2})")
             }
