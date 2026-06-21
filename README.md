@@ -195,8 +195,11 @@ potentially compromised systems:
   gracefully rather than propagating.
 - **Fuzzed** — `cargo fuzz` targets `fuzz_parse` (the pure sector parser) and
   `fuzz_forensic` (the full analysis pipeline); each invariant is "must not panic".
-- **Validated against real artifacts**, not only synthetic fixtures, with the
-  full suite verified in CI.
+- **Synthetic-fixture suite, honestly scoped** — every test is built from
+  in-code byte buffers and verified in CI; there is no real-image corpus or
+  external oracle yet. What backs each capability, the evidence tier, and the
+  recommended independent oracles (TSK `mmls`, `fdisk`) are documented in
+  [validation](https://securityronin.github.io/mbr-partition-forensic/validation/).
 
 ### Running the fuzz targets
 
