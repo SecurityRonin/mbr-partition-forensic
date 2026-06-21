@@ -8,13 +8,16 @@ same bytes correctly) on **real third-party corpora** with known ground truth �
 never against fixtures we hand-encoded and then graded ourselves.
 
 This page records, honestly, what backs each capability today — so the claim is
-independently re-checkable. **The current test suite is built entirely from
-in-code synthetic fixtures: there is no `tests/data/` corpus, no
-`include_bytes!` real image, and no external partition-table oracle wired in.**
-That is stated plainly below rather than dressed up, and the gap — validating
-against `fdisk`-produced tables and The Sleuth Kit's `mmls` on real disk images
-— is recorded as recommended future work. Honesty about a synthetic-only gap is
-the point of this page.
+independently re-checkable. **The primary partition-table parse is now validated
+at Tier 1**: a real third-party disk image (a Brian-Carrier DFTT corpus image)
+is committed as `tests/data/dftt_mmls_1_mbr.dd`, parsed by this crate, and
+reconciled against the partition table reported by The Sleuth Kit's `mmls` (and
+`fdisk` for the active flag) in `forensic/tests/real_mbr_oracle.rs`. The
+remaining capabilities (CHS↔LBA, the EBR chain, bootkit markers, wipe/gap
+carving, VBR cross-check, era attribution) are still backed by in-code synthetic
+fixtures (Tier 3) — that is stated plainly per row below, and extending the
+real-image corpus to cover them (an extended/EBR image, a bootkit sample) is the
+recorded next step.
 
 ## How to read the evidence tiers
 
@@ -34,68 +37,65 @@ whether the data is "synthetic":
 > The `Tier 0 / Tier 1 / Tier 2 / Tier 3 / Tier A` labels in the `//!` headers
 > of the test files (`forensic/tests/*.rs`) are the repo's own *capability*
 > grouping (which analysis layer a test exercises) and are unrelated to the
-> evidence tiers defined here. By the evidence-tier definition above, every test
-> in the suite is **Tier 3** today, because every fixture and its expected answer
-> are authored in the same repo.
+> evidence tiers defined here. By the evidence-tier definition above,
+> `forensic/tests/real_mbr_oracle.rs` is **Tier 1** (real third-party image +
+> independent `mmls`/`fdisk` oracle); every other test is **Tier 3**, because its
+> fixture and expected answer are both authored in this repo.
 
 ## Independent oracles
 
-**None at present.** No external tool (`fdisk`, `parted`, The Sleuth Kit
-`mmls`/`fsstat`) and no third-party reference parser is invoked by any test in
-this repo. The closest thing to an independent check is an internal
-*cross-crate code path* (see below), which is genuinely separate code but still
-runs on a fixture we authored — so it is Tier 2 at best, not an independent
-oracle on real data.
+**The Sleuth Kit `mmls` + `fdisk`** are wired in as the real partition-table
+oracle. Both are independent codebases (neither shares code with this crate). The
+internal cross-crate `gpt-forensic` path remains a Tier-2 check (separate code,
+hand-built fixture).
 
 | Oracle | Independent of us? | Validates | Tier |
 |---|---|---|---|
+| **TSK `mmls` 4.12.1** — on a real DFTT corpus image | **Yes** — third-party tool + third-party image | Each primary entry's start/end/length LBA and type byte vs `parse_mbr_sector(...)` and `analyse(...)` (`forensic/tests/real_mbr_oracle.rs`) | 1 |
+| **`fdisk`** — on the same real image | **Yes** — third-party tool | The active/bootable flag (mmls has no such column) per entry (`forensic/tests/real_mbr_oracle.rs`) | 1 |
 | **`gpt-forensic` (sibling crate)** — auto-invoked on a protective MBR | Separate crate, but **fleet-owned**, and the fixture is hand-built | That a synthetic protective-MBR + GPT disk round-trips through the GPT parser (`forensic/tests/gpt_integration_tests.rs:44`) | 2 |
 | **`forensicnomicon::bootkit` markers** | Fleet-owned knowledge crate (not third-party) | Boot-code matching logic against our own marker table (`forensic/src/bootkit.rs:8`, `forensic/tests/bootkit_tests.rs`) | 3 |
 
-### Recommended oracles to close the gap
+### Recommended oracles to close the remaining gap
 
-These would lift the core capabilities from Tier 3 to Tier 1 and are the
-recommended next step:
+The primary-table parse is now Tier 1. To lift the still-synthetic capabilities
+(EBR chain, CHS↔LBA, bootkit, wipe/gap) the next steps are:
 
-- **The Sleuth Kit `mmls`** — the standard independent partition-table walker.
-  Run `mmls disk.img` and reconcile partition start LBA, length, and type code
-  against `analyse(...)` on the same image. This is the natural ground-truth
-  oracle for primary entries and EBR logical partitions.
-- **`fdisk -l` / `sfdisk --dump`** — generate real MBR and extended/EBR layouts
-  with `fdisk` (legacy CHS-aligned and modern 1 MiB-aligned), then validate the
-  parser against `fdisk`'s own readout of the table it wrote. `sfdisk --dump`
-  gives a machine-parseable answer key.
-- **A real disk image with a known partition table** — e.g. a CFReDS / public
-  CTF image, committed (first sectors only) with provenance, to back the boot
-  sector and partition-geometry fields the way `ntfs-forensic` backs its boot
-  sector against TSK `fsstat`.
+- **TSK `mmls` on an extended-partition image** — to back the EBR logical-chain
+  walk against an independent reading of real logical partitions.
+- **`fdisk -l` / `sfdisk --dump`** — `fdisk` prints both CHS and LBA, giving an
+  independent answer key for CHS↔LBA consistency on a real table.
+- **Real captured bootkit / wiped-region samples** — to move the bootkit-marker
+  and wipe-pattern rows off their hand-authored marker tables.
 
 ## Independent test corpora
 
-**None at present.** There is no `tests/` directory at the repo root and no
-`tests/data/README.md`; every test fixture is constructed in Rust inside the
-test files (helpers such as `make_sector`, `disk()`, `gpt_disk()`,
-`disk_with_boot_code()`). No real disk image is committed or fetched.
+One real third-party corpus is committed; the rest of the suite still uses
+in-code synthetic byte buffers (helpers such as `make_sector`, `disk()`,
+`gpt_disk()`, `disk_with_boot_code()`).
 
 | Corpus | Source | Used for | License / redistribution |
 |---|---|---|---|
-| *(none)* | — | All tests use in-code synthetic byte buffers | — |
+| `tests/data/dftt_mmls_1_mbr.dd` | Real MBR sector of `imageformat_mmls_1`, a Brian-Carrier **DFTT** corpus image (sector 0, byte-identical to the parent E01) | Primary partition-table parse vs `mmls`/`fdisk` (`forensic/tests/real_mbr_oracle.rs`) | Public DFTT test data; only the 512-byte boot sector committed |
+| *(synthetic)* | In-code byte buffers | All other capability tests | — |
 
-**Recommended:** add a repo-root `tests/data/` plus `tests/data/README.md`
-(per the fleet Test-Data Provenance standard) holding the first sectors of a
-real `fdisk`/`mmls`-validated disk image, and register it in
-`issen/docs/corpus-catalog.md`.
+Provenance detail (source, hashes, extraction command, oracle output) is in
+[`tests/data/README.md`](../tests/data/README.md). **Recommended next:** add an
+extended/EBR real image so the logical-chain walk also reaches Tier 1, and
+register the corpus in `issen/docs/corpus-catalog.md`.
 
 ## Per-capability validation
 
-Every capability below is currently **Tier 3** (synthetic fixture authored
-alongside its expected answer). The backing test file is named for each so the
-exact construction is re-checkable, and the recommended independent oracle is
-noted.
+The primary partition-table parse is **Tier 1** (real image + independent
+`mmls`/`fdisk` oracle). Every other capability is **Tier 3** (synthetic fixture
+authored alongside its expected answer). The backing test file is named for each
+so the exact construction is re-checkable, and the recommended independent oracle
+is noted.
 
-| Capability | Tier | Backing test | Recommended independent oracle |
+| Capability | Tier | Backing test | Independent oracle |
 |---|---|---|---|
-| Boot-sector / partition-table parse (signature, entries, LBA, status) | 3 | `forensic/tests/tier_a_table_tests.rs`, `forensic/tests/mbr_tests.rs` | TSK `mmls`, `sfdisk --dump` |
+| Boot-sector / partition-table parse (signature, entries, start/end/length LBA, type, bootable) | **1** | `forensic/tests/real_mbr_oracle.rs` (real DFTT image) | TSK `mmls` + `fdisk` (wired in) |
+| Synthetic primary-table edge cases (overlaps, duplicates, OOB, status) | 3 | `forensic/tests/tier_a_table_tests.rs`, `forensic/tests/mbr_tests.rs` | TSK `mmls`, `sfdisk --dump` |
 | CHS ↔ LBA decode and consistency (`MBR-PART-CHSLBA`) | 3 | `forensic/tests/chs_lba_tests.rs` | `fdisk -l` (prints both CHS and LBA) |
 | EBR logical-partition chain walk (cycle / depth / slack) | 3 | `forensic/tests/tier_a_logical_tests.rs` | TSK `mmls` on an extended-partition image |
 | Boot-code identification (`BootCodeId`) | 3 | `forensic/tests/mbr_tests.rs` (`identify_*`) | Real GRUB/Windows MBR samples |
@@ -130,20 +130,21 @@ cargo test -p mbr-partition-core
 # Analyzer only (all capability tests above live here)
 cargo test -p mbr-partition-forensic
 
-# A single capability, e.g. CHS↔LBA consistency or the GPT cross-check
+# The Tier-1 real-image oracle check
+cargo test -p mbr-partition-forensic --test real_mbr_oracle
+
+# A single synthetic capability, e.g. CHS↔LBA consistency or the GPT cross-check
 cargo test -p mbr-partition-forensic --test chs_lba_tests
 cargo test -p mbr-partition-forensic --test gpt_integration_tests
 ```
 
-To add the recommended independent-oracle check (not yet in the repo), the shape
-would be:
+Re-deriving the oracle answer key for `real_mbr_oracle.rs` (the values are
+`mmls`/`fdisk` output, not computed by this crate):
 
 ```bash
-# Generate a real MBR table and read back the ground truth
-fdisk -l disk.img            # or: sfdisk --dump disk.img
-mmls disk.img                # TSK partition walk
-
-# then assert analyse(disk.img) matches mmls/sfdisk start-LBA, length, type
+# mmls reads the parent E01 directly (or a sparse raw image rebuilt from sector 0)
+mmls imageformat_mmls_1.E01   # start / end / length / type per partition
+fdisk <raw-image>             # active (*) flag — absent here, so neither is bootable
 ```
 
 ## Coverage & fuzzing as backstops
@@ -164,7 +165,9 @@ data does that):
 - **Coverage** — line coverage is enforced in CI; it is a regression backstop
   that proves behaviour is exercised, not a correctness claim.
 
-Until an independent oracle on real disk images is wired in, treat the suite as
-**proof of internal consistency and robustness, not yet proof of real-world
-decode correctness**. Closing that gap with `mmls` / `fdisk` is the recommended
-next step.
+The primary partition-table parse is now proven against real-world bytes (TSK
+`mmls` + `fdisk` on a DFTT image). The remaining capabilities — CHS↔LBA, the EBR
+logical-chain walk, bootkit markers, wipe/gap carving, VBR cross-check, era
+attribution — are still proven only for internal consistency and robustness;
+extending the real-image corpus to cover them (an extended/EBR image, a bootkit
+sample) is the recommended next step.

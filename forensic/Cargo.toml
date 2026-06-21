@@ -10,7 +10,7 @@ homepage.workspace = true
 documentation = "https://docs.rs/mbr-partition-forensic"
 keywords = ["forensics", "mbr", "partition", "disk-image", "dfir"]
 categories = ["parser-implementations", "filesystem"]
-exclude = ["fuzz/", ".github/", ".pre-commit-config.yaml", "deny.toml", "renovate.json"]
+exclude = ["fuzz/", ".github/", ".pre-commit-config.yaml", "deny.toml", "renovate.json", "tests/"]
 
 [features]
 default = ["gpt"]
