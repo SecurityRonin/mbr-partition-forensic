@@ -32,15 +32,6 @@ checksum = "9f1f227452a390804cdb637b74a86990f2a7d7ba4b7d5693aac9b4dd6defd8d6"
 
 [[package]]
 name = "forensicnomicon"
-version = "0.11.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "5ac93239ea6e37ff6f00c54bd204a0a4d9c6ca5f7b0aaeb852f02a899e183830"
-dependencies = [
- "serde",
-]
-
-[[package]]
-name = "forensicnomicon"
 version = "1.0.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "8ed4548e40fc4f7f22f769ba68afbb426c379c168ea4ab019421f10d91fa3b4e"
@@ -82,22 +73,22 @@ dependencies = [
 
 [[package]]
 name = "gpt-partition-core"
-version = "0.5.1"
+version = "0.6.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "ae89e4ba647777b2e98eac3a0d1831f50dd3bc10e8f2f4b7d19c1ca9ea83189f"
+checksum = "820f1815e00025987bb77dcdf97b576bdbcd263ed941e4f75b22077f60e1a742"
 dependencies = [
- "forensicnomicon 0.11.0",
+ "forensicnomicon",
  "serde",
  "thiserror",
 ]
 
 [[package]]
 name = "gpt-partition-forensic"
-version = "0.5.1"
+version = "0.6.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "1fdf4e76d583a29a7bb6597f7ee19f4c26bcd5ee65d6bf39894cf1e1940080c4"
+checksum = "b6366dae7080ccb8facd0c0133b7eb15a0f0f2d4f8261d9663f2a16bb0ebc467"
 dependencies = [
- "forensicnomicon 0.11.0",
+ "forensicnomicon",
  "gpt-partition-core",
  "serde",
  "thiserror",
@@ -135,9 +126,9 @@ checksum = "0ceec5bc11778974d1bcb055b18002eba7f4b3518b6a0081b3af5f21666da9ad"
 
 [[package]]
 name = "mbr-partition-core"
-version = "0.6.0"
+version = "0.6.1"
 dependencies = [
- "forensicnomicon 1.0.0",
+ "forensicnomicon",
  "serde",
  "thiserror",
  "tracing",
@@ -145,9 +136,9 @@ dependencies = [
 
 [[package]]
 name = "mbr-partition-forensic"
-version = "0.6.0"
+version = "0.6.1"
 dependencies = [
- "forensicnomicon 1.0.0",
+ "forensicnomicon",
  "gpt-partition-forensic",
  "mbr-partition-core",
  "serde",
