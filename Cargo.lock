@@ -40,6 +40,36 @@ dependencies = [
 ]
 
 [[package]]
+name = "forensicnomicon"
+version = "1.0.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "8ed4548e40fc4f7f22f769ba68afbb426c379c168ea4ab019421f10d91fa3b4e"
+dependencies = [
+ "forensicnomicon-core",
+ "forensicnomicon-data",
+ "serde",
+]
+
+[[package]]
+name = "forensicnomicon-core"
+version = "1.0.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "f5d5b96ffd37d1e758a1657839de8b4d5e7bfc024a5500509d07ff7acd7b9461"
+dependencies = [
+ "serde",
+]
+
+[[package]]
+name = "forensicnomicon-data"
+version = "1.0.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "664814f07d95790e9c38a9c2c3a0a5539ba4e1ef8e4de72cf32424fc397364ba"
+dependencies = [
+ "forensicnomicon-core",
+ "serde",
+]
+
+[[package]]
 name = "getrandom"
 version = "0.4.3"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -56,7 +86,7 @@ version = "0.5.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "ae89e4ba647777b2e98eac3a0d1831f50dd3bc10e8f2f4b7d19c1ca9ea83189f"
 dependencies = [
- "forensicnomicon",
+ "forensicnomicon 0.11.0",
  "serde",
  "thiserror",
 ]
@@ -67,7 +97,7 @@ version = "0.5.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "1fdf4e76d583a29a7bb6597f7ee19f4c26bcd5ee65d6bf39894cf1e1940080c4"
 dependencies = [
- "forensicnomicon",
+ "forensicnomicon 0.11.0",
  "gpt-partition-core",
  "serde",
  "thiserror",
@@ -105,9 +135,9 @@ checksum = "0ceec5bc11778974d1bcb055b18002eba7f4b3518b6a0081b3af5f21666da9ad"
 
 [[package]]
 name = "mbr-partition-core"
-version = "0.5.2"
+version = "0.6.0"
 dependencies = [
- "forensicnomicon",
+ "forensicnomicon 1.0.0",
  "serde",
  "thiserror",
  "tracing",
@@ -115,9 +145,9 @@ dependencies = [
 
 [[package]]
 name = "mbr-partition-forensic"
-version = "0.5.2"
+version = "0.6.0"
 dependencies = [
- "forensicnomicon",
+ "forensicnomicon 1.0.0",
  "gpt-partition-forensic",
  "mbr-partition-core",
  "serde",
