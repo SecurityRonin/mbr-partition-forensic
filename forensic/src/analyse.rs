@@ -534,6 +534,7 @@ fn scan_primary_entries<R: Read + Seek>(
             findings,
         );
 
+        let (volume_serial, encryption) = partition_volume(reader, byte_offset, disk_size_bytes);
         summaries.push(PartitionSummary {
             index: i,
             lba_start,
@@ -542,6 +543,8 @@ fn scan_primary_entries<R: Read + Seek>(
             byte_size,
             declared_type: entry.type_code,
             detected_fs,
+            volume_serial,
+            encryption,
         });
     }
 
@@ -577,6 +580,30 @@ fn detect_and_check_fs<R: Read + Seek>(
         }
     }
     detected_fs
+}
+
+/// Read a partition's volume serial and BitLocker encryption from its first sector, via
+/// `forensicnomicon`'s volume-analysis (the knowledge owner). Both are properties of the
+/// volume, not of the partition table, so they are surfaced on every partition uniformly
+/// rather than re-read by each downstream consumer. `(None, None)` on an unreadable sector.
+fn partition_volume<R: Read + Seek>(
+    reader: &mut R,
+    byte_offset: u64,
+    disk_size_bytes: u64,
+) -> (
+    Option<forensicnomicon::volume_serial::VolumeSerial>,
+    Option<forensicnomicon::volume_encryption::VolumeEncryption>,
+) {
+    if disk_size_bytes != 0 && byte_offset >= disk_size_bytes {
+        return (None, None);
+    }
+    match read_fingerprint(reader, byte_offset, FS_FINGERPRINT_BYTES) {
+        Ok(buf) => (
+            forensicnomicon::volume_serial::volume_serial(&buf),
+            forensicnomicon::volume_encryption::detect_encryption(&buf),
+        ),
+        Err(_) => (None, None),
+    }
 }
 
 /// Flag a primary entry whose packed CHS first/last addresses contradict their
@@ -746,6 +773,7 @@ fn walk_extended<R: Read + Seek>(
             findings,
         );
 
+        let (volume_serial, encryption) = partition_volume(reader, byte_offset, disk_size_bytes);
         scan.summaries.push(PartitionSummary {
             index,
             lba_start,
@@ -754,6 +782,8 @@ fn walk_extended<R: Read + Seek>(
             byte_size: lba_to_byte(ebr.logical.lba_count as u64, sector_size),
             declared_type: ebr.logical.type_code,
             detected_fs,
+            volume_serial,
+            encryption,
         });
     }
 
