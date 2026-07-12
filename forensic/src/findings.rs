@@ -506,6 +506,13 @@ pub struct PartitionSummary {
     pub declared_type: TypeCode,
     /// Filesystem type detected from the partition's first sector (if readable).
     pub detected_fs: Option<DetectedFs>,
+    /// The volume serial (FAT `BS_VolID` / exFAT / NTFS), from `forensicnomicon::volume_serial`.
+    /// A volume property, so it is read here rather than by each downstream consumer. `None`
+    /// when the first sector carries no recognizable serial.
+    pub volume_serial: Option<forensicnomicon::volume_serial::VolumeSerial>,
+    /// BitLocker volume encryption detected from the first sector
+    /// (`forensicnomicon::volume_encryption`) — a volume property. `None` for a plaintext volume.
+    pub encryption: Option<forensicnomicon::volume_encryption::VolumeEncryption>,
 }
 
 /// Top-level result of a full MBR forensic analysis.

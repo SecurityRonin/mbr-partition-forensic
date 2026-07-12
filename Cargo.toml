@@ -54,3 +54,8 @@ unreadable_literal = { level = "allow", priority = 1 }
 # are intentionally long, flat, and exhaustive — splitting them hurts clarity.
 too_many_lines = { level = "allow", priority = 1 }
 unnested_or_patterns = { level = "allow", priority = 1 }
+
+# TEMPORARY: forensicnomicon's volume-analysis (volume_encryption/volume_serial) ships in 1.6;
+# use the branch until it publishes, then drop this patch and bump the dep to "1.6".
+[patch.crates-io]
+forensicnomicon = { git = "https://github.com/SecurityRonin/forensicnomicon", branch = "volume-analysis-1.6" }
