@@ -34,6 +34,8 @@ pub mod mbr;
 pub mod partition;
 pub mod signature;
 pub mod vbr;
+#[cfg(feature = "vfs")]
+pub mod vfs;
 
 pub use boot_code::{identify as identify_boot_code, BootCodeId};
 pub use disk_signature::{find_signature_collisions, SignatureCollision};
