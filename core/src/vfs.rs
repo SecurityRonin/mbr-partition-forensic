@@ -11,7 +11,26 @@
 use std::sync::Arc;
 
 use forensic_vfs::adapters::SubRange;
-use forensic_vfs::{DynSource, VfsError, VfsResult, VolumeDesc, VolumeScheme, VolumeSystem};
+use forensic_vfs::{
+    DynSource, ImageSource, VfsError, VfsResult, VolumeDesc, VolumeKind, VolumeScheme, VolumeSystem,
+};
+
+/// Fill `buf` from `src` starting at `off`, tolerating short reads and stopping
+/// at EOF (any unfilled tail stays zeroed — the parser bounds-checks its slices).
+fn fill(src: &dyn ImageSource, mut off: u64, mut buf: &mut [u8]) -> VfsResult<()> {
+    while !buf.is_empty() {
+        let n = src.read_at(off, buf)?;
+        if n == 0 {
+            break; // EOF
+        }
+        off = off.saturating_add(n as u64);
+        let Some(rest) = buf.get_mut(n..) else {
+            break; // cov:unreachable: read_at returns n <= buf.len()
+        };
+        buf = rest;
+    }
+    Ok(())
+}
 
 /// An MBR partition scheme over one parent byte source.
 pub struct MbrVolumes {
@@ -20,13 +39,35 @@ pub struct MbrVolumes {
 }
 
 impl MbrVolumes {
-    /// Read the MBR (sector 0) of `parent` and build the primary-partition table.
+    /// Read the MBR (sector 0) of `parent` and build the primary-partition
+    /// table. Returns [`VfsError::Unsupported`] if sector 0 is not a valid MBR
+    /// (no `0x55AA` boot signature).
     pub fn open(parent: DynSource) -> VfsResult<Self> {
-        // RED: not implemented yet — no partitions parsed.
-        Ok(Self {
-            parent,
-            volumes: Vec::new(),
-        })
+        // MBR LBAs are addressed in the disk's logical sectors; the classic MBR
+        // uses 512-byte units, which is what mmls/fdisk assume.
+        let sector_size = crate::SECTOR_SIZE as u64;
+        let mut sector = vec![0u8; crate::SECTOR_SIZE];
+        fill(&*parent, 0, &mut sector)?;
+        let mbr = crate::parse_mbr_sector(&sector).map_err(|_| VfsError::Unsupported {
+            layer: "MbrVolumes",
+            scheme: "MBR".to_string(),
+        })?;
+
+        let volumes = mbr
+            .entries
+            .iter()
+            .filter(|e| !e.is_empty())
+            .enumerate()
+            .map(|(i, e)| VolumeDesc {
+                index: i,
+                kind: VolumeKind::Partition,
+                start: u64::from(e.lba_start).saturating_mul(sector_size),
+                len: u64::from(e.lba_count).saturating_mul(sector_size),
+                type_hint: Some(format!("0x{:02X}", e.type_code.0)),
+                label: None,
+            })
+            .collect();
+        Ok(Self { parent, volumes })
     }
 }
 
