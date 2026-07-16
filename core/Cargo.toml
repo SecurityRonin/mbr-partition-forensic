@@ -29,7 +29,7 @@ serde = { workspace = true, optional = true }
 # forensic-vfs VolumeSystem contract (optional): exposes MBR primary partitions
 # as a composable byte-window scheme. Behind the `vfs` feature so the bare parser
 # does not inherit the VFS dependency graph (ADR 0004).
-forensic-vfs = { version = "0.1", optional = true }
+forensic-vfs = { version = "0.2", optional = true }
 
 [lints]
 workspace = true

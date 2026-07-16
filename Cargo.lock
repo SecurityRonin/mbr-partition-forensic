@@ -32,9 +32,9 @@ checksum = "9f1f227452a390804cdb637b74a86990f2a7d7ba4b7d5693aac9b4dd6defd8d6"
 
 [[package]]
 name = "forensic-vfs"
-version = "0.1.0"
+version = "0.2.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "0e1fd9ca5012d956da1cd418e2c40732f3e7d18638cd8705551e04fc7cc67030"
+checksum = "b8684752c5461349ae9464e0aa38ca2b1930be3491f84e11298f4c11b4760ffe"
 dependencies = [
  "thiserror",
 ]
@@ -135,7 +135,7 @@ checksum = "0ceec5bc11778974d1bcb055b18002eba7f4b3518b6a0081b3af5f21666da9ad"
 
 [[package]]
 name = "mbr-partition-core"
-version = "0.6.2"
+version = "0.6.3"
 dependencies = [
  "forensic-vfs",
  "forensicnomicon",
@@ -146,7 +146,7 @@ dependencies = [
 
 [[package]]
 name = "mbr-partition-forensic"
-version = "0.6.2"
+version = "0.6.3"
 dependencies = [
  "forensicnomicon",
  "gpt-partition-forensic",
