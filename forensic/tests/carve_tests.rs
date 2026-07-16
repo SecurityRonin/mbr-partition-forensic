@@ -57,6 +57,15 @@ fn file_magic_table_non_empty() {
     assert!(!FILE_MAGICS.is_empty());
 }
 
+#[test]
+fn carve_data_shorter_than_longest_magic_finds_nothing() {
+    // A 3-byte window is shorter than most magics (e.g. the 16-byte SQLite
+    // magic), so every magic longer than the data is skipped — no match, no
+    // panic on the short slice.
+    assert!(carve(b"PK\x03", 0).is_empty());
+    assert!(carve(&[], 0).is_empty());
+}
+
 // ── extract_ascii_strings ────────────────────────────────────────────────────
 
 #[test]

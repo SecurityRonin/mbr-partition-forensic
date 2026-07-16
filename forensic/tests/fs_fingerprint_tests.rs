@@ -26,6 +26,25 @@ fn entry(type_code: u8, lba_start: u32, lba_count: u32) -> [u8; 16] {
 }
 
 #[test]
+fn detect_recognises_fat32_from_knowledge_base() {
+    // FAT32 BS_FilSysType "FAT32   " at offset 0x52 (per forensicnomicon KB),
+    // mapped to DetectedFs::Fat.
+    let mut buf = vec![0u8; 0x52 + 8];
+    buf[0x52..0x52 + 8].copy_from_slice(b"FAT32   ");
+    assert_eq!(signature::detect(&buf), DetectedFs::Fat);
+}
+
+#[test]
+fn detect_returns_unknown_for_unmapped_kb_name() {
+    // ISO 9660 ("CD001" at 0x8001) IS in the knowledge base but has no
+    // DetectedFs variant, so map_fs_name yields None and detect falls through
+    // to Unknown rather than mis-classifying it.
+    let mut buf = vec![0u8; 0x8001 + 5];
+    buf[0x8001..0x8001 + 5].copy_from_slice(b"CD001");
+    assert_eq!(signature::detect(&buf), DetectedFs::Unknown);
+}
+
+#[test]
 fn detect_recognises_btrfs_at_64k() {
     // The Btrfs magic is at 65600 (0x10040 = superblock @64 KiB + 0x40), per the
     // btrfs on-disk format and util-linux libblkid (.kboff=64, .sboff=0x40).

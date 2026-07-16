@@ -58,6 +58,44 @@ fn structured_text_is_mixed() {
 }
 
 #[test]
+fn empty_slice_is_mixed() {
+    // Nothing to judge — an empty region classifies as Mixed, never a wipe.
+    assert_eq!(classify(&[]), FillPattern::Mixed);
+    assert!(!classify(&[]).is_deliberate_wipe());
+}
+
+#[test]
+fn two_byte_non_alternating_low_entropy_is_mixed() {
+    // len >= 2, first two bytes differ, but not a full a,b,a,b alternation and
+    // not high entropy — the .all() check fails, falling through to Mixed.
+    assert_eq!(classify(&[0x01, 0x02, 0x02, 0x02]), FillPattern::Mixed);
+}
+
+#[test]
+fn two_byte_equal_first_pair_non_uniform_is_mixed() {
+    // len >= 2 with the first two bytes equal (a == b) short-circuits the
+    // alternating `a != b` guard before the .all() scan — the other short-circuit
+    // arm of the alternating check — and still resolves to Mixed.
+    assert_eq!(classify(&[0x02, 0x02, 0x01, 0x03]), FillPattern::Mixed);
+}
+
+#[test]
+fn label_describes_each_pattern() {
+    assert_eq!(FillPattern::Zeros.label(), "all 0x00");
+    assert_eq!(FillPattern::Ones.label(), "all 0xFF");
+    assert_eq!(FillPattern::Uniform(0xAB).label(), "uniform 0xAB");
+    assert_eq!(
+        FillPattern::Alternating(0x55, 0xAA).label(),
+        "alternating 0x55/0xAA"
+    );
+    assert_eq!(
+        FillPattern::HighEntropy.label(),
+        "high-entropy (random/encrypted)"
+    );
+    assert_eq!(FillPattern::Mixed.label(), "mixed");
+}
+
+#[test]
 fn deliberate_wipe_predicate() {
     assert!(FillPattern::Ones.is_deliberate_wipe());
     assert!(FillPattern::Uniform(0xAB).is_deliberate_wipe());

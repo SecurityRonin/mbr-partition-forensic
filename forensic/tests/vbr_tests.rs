@@ -49,6 +49,22 @@ fn parse_bpb_rejects_garbage() {
     assert!(parse_bpb(&bad).is_none());
 }
 
+#[test]
+fn parse_bpb_rejects_short_sector() {
+    // Fewer than 512 bytes cannot hold a BPB — rejected before any field read.
+    assert!(parse_bpb(&[0u8; 511]).is_none());
+    assert!(parse_bpb(&[]).is_none());
+}
+
+#[test]
+fn parse_bpb_rejects_non_power_of_two_cluster() {
+    // Valid boot signature + bytes-per-sector, but sectors-per-cluster is not a
+    // power of two — a corrupt/edited BPB, rejected.
+    let mut bad = vbr(0);
+    bad[13] = 3; // sectors_per_cluster = 3 (not a power of two)
+    assert!(parse_bpb(&bad).is_none());
+}
+
 fn entry(type_code: u8, lba_start: u32, lba_count: u32) -> [u8; 16] {
     let mut e = [0u8; 16];
     e[4] = type_code;

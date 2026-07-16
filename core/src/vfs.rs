@@ -1,6 +1,6 @@
 //! `forensic-vfs` [`VolumeSystem`] adapter for the MBR, behind the `vfs` feature.
 //!
-//! Wraps a parent [`ImageSource`](forensic_vfs::ImageSource) and exposes the
+//! Wraps a parent [`ImageSource`] and exposes the
 //! disk's MBR **primary** partitions as [`VolumeDesc`]s, each openable as a
 //! [`SubRange`] byte window. MBR partition LBAs are addressed in the disk's
 //! logical sectors; the classic MBR uses 512-byte units (`crate::SECTOR_SIZE`),
@@ -94,9 +94,17 @@ impl VolumeSystem for MbrVolumes {
 #[cfg(test)]
 mod tests {
     use super::MbrVolumes;
-    use forensic_vfs::adapters::FileSource;
-    use forensic_vfs::{DynSource, VolumeKind, VolumeScheme, VolumeSystem};
+    use forensic_vfs::adapters::{FileSource, SeekPoolSource};
+    use forensic_vfs::{DynSource, VfsError, VolumeKind, VolumeScheme, VolumeSystem};
+    use std::io::Cursor;
     use std::sync::Arc;
+
+    /// An in-memory `ImageSource` whose advertised length may exceed its backing
+    /// bytes, so `read_at` returns a short read then EOF — exercising `fill`'s
+    /// tolerate-short-read / stop-at-EOF loop.
+    fn mem_source(bytes: Vec<u8>, advertised_len: u64) -> DynSource {
+        Arc::new(SeekPoolSource::single(Cursor::new(bytes), advertised_len))
+    }
 
     /// The real DFTT-corpus MBR sector (public domain), whose table `mmls` 4.12.1
     /// and `fdisk` independently re-decoded (Tier-1 oracle; see
@@ -136,5 +144,22 @@ mod tests {
         let vs = MbrVolumes::open(real_mbr()).expect("parse");
         assert!(vs.open_volume(0).is_ok());
         assert!(vs.open_volume(99).is_err());
+    }
+
+    #[test]
+    fn open_rejects_non_mbr_sector_zero() {
+        // A full 512-byte sector with no 0x55AA boot signature is not an MBR;
+        // `open` maps the parse failure to `VfsError::Unsupported`.
+        let vs = MbrVolumes::open(mem_source(vec![0u8; 512], 512));
+        assert!(matches!(vs, Err(VfsError::Unsupported { scheme, .. }) if scheme == "MBR"));
+    }
+
+    #[test]
+    fn open_tolerates_truncated_source_then_rejects() {
+        // The source advertises 512 bytes but backs only 100, so `fill` takes a
+        // short read then hits EOF; the zero-padded sector still fails the MBR
+        // signature check and surfaces as Unsupported (never a panic).
+        let vs = MbrVolumes::open(mem_source(vec![0u8; 100], 512));
+        assert!(matches!(vs, Err(VfsError::Unsupported { .. })));
     }
 }

@@ -835,7 +835,7 @@ fn check_gap_content<R: Read + Seek>(
         let byte_offset = lba_to_byte(gap.lba_start, sector_size);
         let sample_len = gap.byte_size.min(GAP_SAMPLE_BYTES as u64) as usize;
         if sample_len == 0 {
-            continue;
+            continue; // cov:unreachable: compute_gaps only yields gaps of >= 1 sector, so byte_size is never 0
         }
         if reader.seek(SeekFrom::Start(byte_offset)).is_err() {
             continue;

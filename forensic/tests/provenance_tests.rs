@@ -52,6 +52,20 @@ fn era_falls_back_to_boot_code() {
     );
 }
 
+#[test]
+fn era_falls_back_to_legacy_boot_code() {
+    // Oddly-aligned first partition with a GRUB Legacy loader → legacy era.
+    assert_eq!(
+        infer_era(Some(1000), BootCodeId::GrubLegacy),
+        PartitioningEra::LegacyCylinder
+    );
+    // No geometry signal at all, GRUB Legacy loader → still legacy via boot code.
+    assert_eq!(
+        infer_era(None, BootCodeId::GrubLegacy),
+        PartitioningEra::LegacyCylinder
+    );
+}
+
 fn entry(type_code: u8, lba_start: u32, lba_count: u32) -> [u8; 16] {
     let mut e = [0u8; 16];
     e[4] = type_code;

@@ -83,7 +83,7 @@ pub fn classify(data: &[u8]) -> FillPattern {
         {
             return FillPattern::Alternating(a, b);
         }
-    }
+    } // cov:unreachable: `data.len() >= 2` always holds here (empty returns above; a 1-byte slice is caught by the all-equal check), so this block's no-alternation exit region is never a distinct branch
 
     if entropy::shannon(data) > HIGH_ENTROPY_THRESHOLD {
         return FillPattern::HighEntropy;
