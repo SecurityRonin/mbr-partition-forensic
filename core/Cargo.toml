@@ -19,12 +19,17 @@ name = "mbr"
 default = []
 trace = ["dep:tracing"]
 serde = ["forensicnomicon/serde", "dep:serde"]
+vfs = ["dep:forensic-vfs"]
 
 [dependencies]
 thiserror = { workspace = true }
 forensicnomicon.workspace = true
 tracing = { workspace = true, optional = true }
 serde = { workspace = true, optional = true }
+# forensic-vfs VolumeSystem contract (optional): exposes MBR primary partitions
+# as a composable byte-window scheme. Behind the `vfs` feature so the bare parser
+# does not inherit the VFS dependency graph (ADR 0004).
+forensic-vfs = { version = "0.1", optional = true }
 
 [lints]
 workspace = true

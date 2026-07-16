@@ -7,7 +7,7 @@
 [![CI](https://github.com/SecurityRonin/mbr-partition-forensic/actions/workflows/ci.yml/badge.svg)](https://github.com/SecurityRonin/mbr-partition-forensic/actions)
 [![Sponsor](https://img.shields.io/badge/sponsor-h4x0r-ea4aaa?logo=github-sponsors)](https://github.com/sponsors/h4x0r)
 
-**A pure, read-only Master Boot Record parser — decode the boot sector, partition table, and EBR chain from a 512-byte buffer or any `Read + Seek`, with no I/O of its own and no panics on hostile input.**
+**A pure, read-only Master Boot Record parser — decode the boot sector, partition table, and EBR chain from a 512-byte buffer or any `Read + Seek`, with no I/O of its own, input-fuzzed and panic-free by construction on hostile input.**
 
 ```bash
 cargo add mbr-partition-core
