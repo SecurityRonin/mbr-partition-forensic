@@ -51,3 +51,7 @@ plugins:
 # Directory URLs (/privacy/, /terms/) — matches the SecurityRonin README footer
 # standard (…/<repo>/privacy/). Flat .html URLs would 404 the footer links.
 use_directory_urls: true
+
+exclude_docs: |
+  PRD.md
+  decisions/

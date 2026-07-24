@@ -80,7 +80,7 @@ in-code synthetic byte buffers (helpers such as `make_sector`, `disk()`,
 | *(synthetic)* | In-code byte buffers | All other capability tests | — |
 
 Provenance detail (source, hashes, extraction command, oracle output) is in
-[`tests/data/README.md`](../tests/data/README.md). **Recommended next:** add an
+[`tests/data/README.md`](https://github.com/SecurityRonin/mbr-partition-forensic/blob/main/tests/data/README.md). **Recommended next:** add an
 extended/EBR real image so the logical-chain walk also reaches Tier 1, and
 register the corpus in `issen/docs/corpus-catalog.md`.
 
