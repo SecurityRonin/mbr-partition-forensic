@@ -1,3 +1,6 @@
 /target/
 /fuzz/target/
 **/*.rs.bk
+# Local dev worktree symlinks (machine-specific; must never be committed —
+# a symlink to an absolute local path breaks release-plz's workspace copy on CI)
+/.claude/
