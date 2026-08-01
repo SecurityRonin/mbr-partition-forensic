@@ -38,33 +38,9 @@ criteria = "safe-to-run"
 version = "2.4.1"
 criteria = "safe-to-run"
 
-[[exemptions.forensic-vfs]]
-version = "0.2.0"
-criteria = "safe-to-deploy"
-
-[[exemptions.forensicnomicon]]
-version = "1.6.0"
-criteria = "safe-to-deploy"
-
-[[exemptions.forensicnomicon-core]]
-version = "1.1.0"
-criteria = "safe-to-deploy"
-
-[[exemptions.forensicnomicon-data]]
-version = "1.2.1"
-criteria = "safe-to-deploy"
-
 [[exemptions.getrandom]]
 version = "0.4.3"
 criteria = "safe-to-run"
-
-[[exemptions.gpt-partition-core]]
-version = "0.6.0"
-criteria = "safe-to-deploy"
-
-[[exemptions.gpt-partition-forensic]]
-version = "0.6.0"
-criteria = "safe-to-deploy"
 
 [[exemptions.itoa]]
 version = "1.0.18"
@@ -81,14 +57,6 @@ criteria = "safe-to-run"
 [[exemptions.log]]
 version = "0.4.33"
 criteria = "safe-to-run"
-
-[[exemptions.mbr-partition-core]]
-version = "0.6.3"
-criteria = "safe-to-deploy"
-
-[[exemptions.mbr-partition-forensic]]
-version = "0.6.3"
-criteria = "safe-to-deploy"
 
 [[exemptions.memchr]]
 version = "2.8.2"
