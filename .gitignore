@@ -1,4 +1,4 @@
-/target/
+target/
 /fuzz/target/
 **/*.rs.bk
 # Local dev worktree symlinks (machine-specific; must never be committed —
